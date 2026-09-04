@@ -1,5 +1,53 @@
 # spring-boot
 
+An API-first Spring Boot service for registering assets. Each registration is hashed, signed
+with a secp256k1 key, and the hash anchored on an EVM chain; the result is published as a
+signed event over Kafka. Every route except the health probe and the token endpoint requires
+a bearer token, and the perimeter is deny-by-default.
+
+## Try it
+
+```bash
+./demo.sh
+```
+
+Brings up Kafka and anvil, starts the service with throwaway credentials it generates
+itself, walks all nine endpoints — including a step that proves an unauthenticated read is
+refused — then tears everything down. No setup, no `.env`, nothing to export.
+
+## Testing
+
+| | |
+|---|---|
+| Tests | 226 |
+| Line coverage | 100% (444/444) |
+| Branch coverage | 100% (66/66) |
+| Mutation score | 97.8% (134/137) |
+
+Line coverage says a line ran. Mutation testing says a test would notice if it broke: PIT
+changes one instruction at a time and reruns the tests that cover it. Three mutants survive.
+They are [written down](#mutation-testing), not hidden — an equivalent mutant, a log-only
+expression, and a known PIT limitation with Spring's cached test contexts.
+
+## What running it found
+
+Three defects a green suite at 100% coverage did not see. Each was found by running the
+system, not by reading it.
+
+**A broker outage returned 500 on every write.** With no reachable broker,
+`KafkaTemplate.send` blocks for `max.block.ms` and then throws on the request thread instead
+of reporting through the future it returns. Every integration test mocked the publisher, and
+a mock never throws.
+
+**Configuration that looked applied and was not.** `spring.kafka.listener.ack-mode` in
+`application.yml` reaches only the container factory Spring Boot auto-configures. This
+service builds its own, so the setting was ignored and every delivered record failed for a
+missing acknowledgment.
+
+**A live client secret in the log.** A Java record prints every component in its generated
+`toString()`, so Spring's request logging wrote the credential out at DEBUG. Four types now
+redact.
+
 An API-first blockchain ledger service in Java 21 and Spring Boot 3.5. It registers assets,
 anchors a keccak256 hash of each asset payload on an EVM chain, signs that hash with a
 secp256k1 key held only in the process environment, and publishes the result to Kafka —
