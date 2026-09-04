@@ -87,13 +87,13 @@ jobs:
           # -x follows the sourced lib/*.sh, so they are analysed in the context that
           # actually uses them rather than standalone, where every shared helper would
           # look unused.
-          shellcheck -x run.sh stop.sh demo.sh
+          shellcheck -x run.sh stop.sh demo.sh mutants.sh
 
       # A syntax error in a script that is never executed in CI would otherwise ship.
       - name: Verify the scripts parse and are executable
         run: |
           set -euo pipefail
-          for script in run.sh stop.sh demo.sh; do
+          for script in run.sh stop.sh demo.sh mutants.sh; do
             bash -n "$script"
             test -x "$script" || { echo "$script is not executable"; exit 1; }
             echo "$script: parses, executable"

@@ -395,6 +395,36 @@ anywhere in the repository.
 | [`LedgerPropertiesValidationTest`](src/test/java/com/pigfox/ledger/config/LedgerPropertiesValidationTest.java) | A missing or too-short secret fails startup |
 | [`PrometheusNamingTest`](src/test/java/com/pigfox/ledger/config/PrometheusNamingTest.java) | The metric names that actually reach a scrape, which are not the names the code asks for |
 
+### Mutation testing
+
+Coverage says a line ran. It cannot say a line was *checked* — a suite that executes
+everything and asserts nothing still reports 100%. Mutation testing asks the better
+question: change one instruction, and does a test fail?
+
+[PIT](https://pitest.org/) rewrites the bytecode one mutation at a time — a `>` becomes
+`>=`, a return value becomes null, a call is removed — and reruns the tests covering that
+line. A mutant that dies is a line some assertion is genuinely watching. A mutant that
+survives is a line the suite runs past without looking, which is precisely the gap a
+coverage percentage hides.
+
+```bash
+./mutants.sh                                   # everything under com.pigfox.ledger
+./mutants.sh --class '*.AssetService'          # one class, much faster
+./mutants.sh --html                            # also open the HTML report
+```
+
+It needs no running application, no containers and no credentials, and it prints the score
+followed by every surviving mutant as class, line and mutator, worst class first.
+
+The analysis lives in a `mutation` Maven profile bound to no lifecycle phase, so it runs
+only when named. A normal build, `./mvnw verify`, and every CI job are unaffected in speed
+and outcome, and no CI job runs it today.
+
+It is **report only** on purpose. There is no mutation threshold and nothing fails on a low
+score. A gate set before anyone has read the survivors is just a number to be gamed, and
+some survivors are equivalent mutants — changes that cannot alter observable behaviour and
+therefore cannot be killed by any test. Those are worth recognising, not chasing.
+
 ## Container
 
 ```bash

@@ -32,6 +32,8 @@
     <bouncycastle.version>1.85.2</bouncycastle.version>
     <web3j.version>4.12.2</web3j.version>
     <jacoco.version>0.8.12</jacoco.version>
+    <pitest.version>1.30.0</pitest.version>
+    <pitest.junit5.version>1.2.3</pitest.junit5.version>
     <!-- The suite covers every line and branch; the gate holds it there. -->
     <jacoco.line.minimum>1.00</jacoco.line.minimum>
     <jacoco.branch.minimum>1.00</jacoco.branch.minimum>
@@ -185,4 +187,56 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!--
+      Mutation testing, behind a profile and bound to no lifecycle phase, so it runs only
+      when asked for by name: ./mvnw -P mutation org.pitest:pitest-maven:mutationCoverage,
+      or more usually ./mutants.sh. A normal build and every existing CI job are untouched
+      in both speed and outcome.
+
+      Report only, deliberately. There is no mutationThreshold and nothing fails on a low
+      score: the first job of this profile is to measure the suite as it stands, and a gate
+      added before anyone has read the survivors would just be a number to game.
+    -->
+    <profile>
+      <id>mutation</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.pitest</groupId>
+            <artifactId>pitest-maven</artifactId>
+            <version>${pitest.version}</version>
+            <dependencies>
+              <dependency>
+                <groupId>org.pitest</groupId>
+                <artifactId>pitest-junit5-plugin</artifactId>
+                <version>${pitest.junit5.version}</version>
+              </dependency>
+            </dependencies>
+            <configuration>
+              <targetClasses>
+                <param>com.pigfox.ledger.*</param>
+              </targetClasses>
+              <targetTests>
+                <param>com.pigfox.ledger.*</param>
+              </targetTests>
+              <outputFormats>
+                <param>HTML</param>
+                <param>XML</param>
+              </outputFormats>
+              <!-- A stable path, so mutants.sh can find the report without globbing dates. -->
+              <timestampedReports>false</timestampedReports>
+              <threads>8</threads>
+              <!-- Several suites boot a Spring context, which is slow enough that PIT's
+                   default 4s allowance would report timeouts that are really just startup. -->
+              <timeoutConstant>30000</timeoutConstant>
+              <failWhenNoMutations>false</failWhenNoMutations>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+
 </project>
