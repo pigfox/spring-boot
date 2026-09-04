@@ -89,5 +89,5 @@ springdoc:
 
 logging:
   level:
-    com.pigfox.ledger: INFO
+    com.pigfox.springboot: INFO
     org.apache.kafka.clients: WARN

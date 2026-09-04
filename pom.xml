@@ -216,10 +216,10 @@
             </dependencies>
             <configuration>
               <targetClasses>
-                <param>com.pigfox.ledger.*</param>
+                <param>com.pigfox.springboot.*</param>
               </targetClasses>
               <targetTests>
-                <param>com.pigfox.ledger.*</param>
+                <param>com.pigfox.springboot.*</param>
               </targetTests>
               <outputFormats>
                 <param>HTML</param>

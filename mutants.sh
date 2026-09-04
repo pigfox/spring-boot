@@ -31,9 +31,9 @@ usage() {
     cat <<'USAGE'
 Usage: mutants.sh [--class PATTERN] [--html] [--help]
 
-  (no flags)        Mutate every class under com.pigfox.ledger and report.
+  (no flags)        Mutate every class under com.pigfox.springboot and report.
   --class PATTERN   Scope the run to matching classes, e.g. --class '*.AssetService'
-                    or --class com.pigfox.ledger.crypto.*. Much faster for a rerun
+                    or --class com.pigfox.springboot.crypto.*. Much faster for a rerun
                     while working on one class.
   --html            Also open the HTML report at the end, or name its path when
                     there is no way to open a browser.
@@ -63,7 +63,7 @@ run_analysis() {
         log "mutating ${CLASS_PATTERN}"
         args+=("-DtargetClasses=${CLASS_PATTERN}")
     else
-        log 'mutating com.pigfox.ledger.* against the whole suite'
+        log 'mutating com.pigfox.springboot.* against the whole suite'
     fi
     log 'this runs the tests once for coverage, then again per surviving candidate'
 

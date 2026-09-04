@@ -59,17 +59,17 @@ Contract      src/main/resources/openapi/asset-api.yaml
 
 | Requirement | Where it lives | How it is proved |
 |---|---|---|
-| Java + Spring Boot | [`pom.xml`](pom.xml), [`LedgerNodeApplication.java`](src/main/java/com/pigfox/ledger/LedgerNodeApplication.java) | Java 21, Boot 3.5.16; [`LedgerNodeApplicationTest`](src/test/java/com/pigfox/ledger/LedgerNodeApplicationTest.java) boots the real entry point |
-| API-first design | [`asset-api.yaml`](src/main/resources/openapi/asset-api.yaml) written first, then [`AssetController`](src/main/java/com/pigfox/ledger/api/AssetController.java), [`AuthController`](src/main/java/com/pigfox/ledger/api/AuthController.java), [`OpenApiConfig`](src/main/java/com/pigfox/ledger/config/OpenApiConfig.java) | [`OpenApiContractTest`](src/test/java/com/pigfox/ledger/api/OpenApiContractTest.java) diffs the committed spec against the springdoc-generated description on every build — paths, methods, operation ids, schemas, security and response codes |
-| Blockchain networks | [`AnchorService`](src/main/java/com/pigfox/ledger/chain/AnchorService.java), [`Web3Config`](src/main/java/com/pigfox/ledger/config/Web3Config.java) | web3j over JSON-RPC; [`AnchorServiceTest`](src/test/java/com/pigfox/ledger/chain/AnchorServiceTest.java) covers anchored, rejected, unreachable and disabled |
+| Java + Spring Boot | [`pom.xml`](pom.xml), [`Application.java`](src/main/java/com/pigfox/springboot/Application.java) | Java 21, Boot 3.5.16; [`ApplicationTest`](src/test/java/com/pigfox/springboot/ApplicationTest.java) boots the real entry point |
+| API-first design | [`asset-api.yaml`](src/main/resources/openapi/asset-api.yaml) written first, then [`AssetController`](src/main/java/com/pigfox/springboot/api/AssetController.java), [`AuthController`](src/main/java/com/pigfox/springboot/api/AuthController.java), [`OpenApiConfig`](src/main/java/com/pigfox/springboot/config/OpenApiConfig.java) | [`OpenApiContractTest`](src/test/java/com/pigfox/springboot/api/OpenApiContractTest.java) diffs the committed spec against the springdoc-generated description on every build — paths, methods, operation ids, schemas, security and response codes |
+| Blockchain networks | [`AnchorService`](src/main/java/com/pigfox/springboot/chain/AnchorService.java), [`Web3Config`](src/main/java/com/pigfox/springboot/config/Web3Config.java) | web3j over JSON-RPC; [`AnchorServiceTest`](src/test/java/com/pigfox/springboot/chain/AnchorServiceTest.java) covers anchored, rejected, unreachable and disabled |
 | Smart contracts | [`contracts/AssetRegistry.sol`](contracts/AssetRegistry.sol) | `bytes32 → address` registry with an `AssetAnchored` event, first-write-wins; called through `registerAsset` / `signerOf` in `AnchorService` |
-| Consensus awareness | [`AnchorService.anchor`](src/main/java/com/pigfox/ledger/chain/AnchorService.java), [`AnchorResult`](src/main/java/com/pigfox/ledger/chain/AnchorResult.java) | EIP-155 chain id in every signed transaction, pending-nonce reads, and submission treated as *proposed* not *final* — see [Degradation](#degradation) |
-| Cryptographic signing | [`SignatureService`](src/main/java/com/pigfox/ledger/crypto/SignatureService.java), [`PayloadHasher`](src/main/java/com/pigfox/ledger/crypto/PayloadHasher.java) | secp256k1 sign then recover-and-verify; [`SignatureServiceTest`](src/test/java/com/pigfox/ledger/crypto/SignatureServiceTest.java) (32 tests) covers the round trip, tampering, and malformed input |
-| Key management | [`SignatureService`](src/main/java/com/pigfox/ledger/crypto/SignatureService.java), [`LedgerProperties`](src/main/java/com/pigfox/ledger/config/LedgerProperties.java), [`application.yml`](src/main/resources/application.yml) | Key read once at startup from `LEDGER_SIGNING_KEY`, never logged or returned; no in-repo default, so a missing key fails startup |
-| Zero-trust | [`SecurityConfig`](src/main/java/com/pigfox/ledger/config/SecurityConfig.java) | Stateless, deny-by-default, JWT required everywhere except the token endpoint and the health probe; [`ZeroTrustSecurityTest`](src/test/java/com/pigfox/ledger/api/ZeroTrustSecurityTest.java) and [`ManagementPortSecurityTest`](src/test/java/com/pigfox/ledger/api/ManagementPortSecurityTest.java) |
-| Method-level authorization on writes | [`AssetController`](src/main/java/com/pigfox/ledger/api/AssetController.java) | `@PreAuthorize` per method, independent of the URL rules; a read-only token gets 403 on a write |
-| Kafka event-driven | [`KafkaConfig`](src/main/java/com/pigfox/ledger/config/KafkaConfig.java), [`AssetEventPublisher`](src/main/java/com/pigfox/ledger/kafka/AssetEventPublisher.java), [`AssetEventListener`](src/main/java/com/pigfox/ledger/kafka/AssetEventListener.java) | `asset.events`, JSON serde with trusted packages pinned to `com.pigfox.ledger.domain`, idempotent producer, `acks=all`; [`KafkaConfigTest`](src/test/java/com/pigfox/ledger/config/KafkaConfigTest.java) pins each setting |
-| Telemetry | [`TelemetryConfig`](src/main/java/com/pigfox/ledger/config/TelemetryConfig.java), [`application.yml`](src/main/resources/application.yml), [`AssetService`](src/main/java/com/pigfox/ledger/service/AssetService.java) | Actuator, Prometheus scrape, OTLP tracing, and the `ledger.assets.registered` domain counter |
+| Consensus awareness | [`AnchorService.anchor`](src/main/java/com/pigfox/springboot/chain/AnchorService.java), [`AnchorResult`](src/main/java/com/pigfox/springboot/chain/AnchorResult.java) | EIP-155 chain id in every signed transaction, pending-nonce reads, and submission treated as *proposed* not *final* — see [Degradation](#degradation) |
+| Cryptographic signing | [`SignatureService`](src/main/java/com/pigfox/springboot/crypto/SignatureService.java), [`PayloadHasher`](src/main/java/com/pigfox/springboot/crypto/PayloadHasher.java) | secp256k1 sign then recover-and-verify; [`SignatureServiceTest`](src/test/java/com/pigfox/springboot/crypto/SignatureServiceTest.java) (32 tests) covers the round trip, tampering, and malformed input |
+| Key management | [`SignatureService`](src/main/java/com/pigfox/springboot/crypto/SignatureService.java), [`LedgerProperties`](src/main/java/com/pigfox/springboot/config/LedgerProperties.java), [`application.yml`](src/main/resources/application.yml) | Key read once at startup from `LEDGER_SIGNING_KEY`, never logged or returned; no in-repo default, so a missing key fails startup |
+| Zero-trust | [`SecurityConfig`](src/main/java/com/pigfox/springboot/config/SecurityConfig.java) | Stateless, deny-by-default, JWT required everywhere except the token endpoint and the health probe; [`ZeroTrustSecurityTest`](src/test/java/com/pigfox/springboot/api/ZeroTrustSecurityTest.java) and [`ManagementPortSecurityTest`](src/test/java/com/pigfox/springboot/api/ManagementPortSecurityTest.java) |
+| Method-level authorization on writes | [`AssetController`](src/main/java/com/pigfox/springboot/api/AssetController.java) | `@PreAuthorize` per method, independent of the URL rules; a read-only token gets 403 on a write |
+| Kafka event-driven | [`KafkaConfig`](src/main/java/com/pigfox/springboot/config/KafkaConfig.java), [`AssetEventPublisher`](src/main/java/com/pigfox/springboot/kafka/AssetEventPublisher.java), [`AssetEventListener`](src/main/java/com/pigfox/springboot/kafka/AssetEventListener.java) | `asset.events`, JSON serde with trusted packages pinned to `com.pigfox.springboot.domain`, idempotent producer, `acks=all`; [`KafkaConfigTest`](src/test/java/com/pigfox/springboot/config/KafkaConfigTest.java) pins each setting |
+| Telemetry | [`TelemetryConfig`](src/main/java/com/pigfox/springboot/config/TelemetryConfig.java), [`application.yml`](src/main/resources/application.yml), [`AssetService`](src/main/java/com/pigfox/springboot/service/AssetService.java) | Actuator, Prometheus scrape, OTLP tracing, and the `ledger.assets.registered` domain counter |
 | CI/CD | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Build, test, 100% coverage gate, secret scan, dependency scan, image build and image scan |
 | DevSecOps | [`.github/workflows/ci.yml`](.github/workflows/ci.yml), [`Dockerfile`](Dockerfile) | gitleaks over full history, Trivy filesystem and image scans failing on HIGH/CRITICAL, non-root distro-minimal runtime, image smoke test asserting the node refuses to start unconfigured |
 
@@ -351,7 +351,7 @@ Neither the chain nor the broker is on the write path. Both are corroboration la
 of a hash that is already signed and stored, so neither may fail a caller's request.
 
 For the chain, a node that is down, a transaction the node refuses, or a contract that
-reverts each produce an [`AnchorResult`](src/main/java/com/pigfox/ledger/chain/AnchorResult.java)
+reverts each produce an [`AnchorResult`](src/main/java/com/pigfox/springboot/chain/AnchorResult.java)
 rather than an exception. An unavailable chain yields `anchored: false` and an absent
 `anchorTxHash` — never a 500. The `UNREACHABLE` / `REJECTED` distinction is kept so an
 operator can tell an outage from a bad configuration, and `ledger.assets.anchor.failures`
@@ -364,16 +364,16 @@ all it cannot resolve topic metadata, so it blocks for `max.block.ms` and then t
 surface as a 500 for a write that actually succeeded — which is exactly what a smoke test
 against the built image caught after a fully green suite, because every integration test
 mocked the publisher.
-[`AssetEventPublisher`](src/main/java/com/pigfox/ledger/kafka/AssetEventPublisher.java) now
+[`AssetEventPublisher`](src/main/java/com/pigfox/springboot/kafka/AssetEventPublisher.java) now
 guards both paths, `max.block.ms` is 2s rather than the 60s default so an outage costs a
 moment instead of a minute, and
-[`BrokerOutageIntegrationTest`](src/test/java/com/pigfox/ledger/api/BrokerOutageIntegrationTest.java)
+[`BrokerOutageIntegrationTest`](src/test/java/com/pigfox/springboot/api/BrokerOutageIntegrationTest.java)
 registers an asset against a closed port with the real publisher in place.
 
 ### Canonicalisation
 
 Two nodes must agree byte-for-byte on what was signed, so
-[`PayloadHasher`](src/main/java/com/pigfox/ledger/crypto/PayloadHasher.java) length-prefixes
+[`PayloadHasher`](src/main/java/com/pigfox/springboot/crypto/PayloadHasher.java) length-prefixes
 every segment and sorts metadata keys. Without length prefixes, `owner="a:b"` and
 `owner="a", assetType="b"` would collide onto the same hash; without sorting, map iteration
 order would change it.
@@ -383,7 +383,7 @@ order would change it.
 The producer is idempotent with `acks=all`, which removes duplicates caused by its own
 retries — not duplicates from redelivery after a consumer restart. At-least-once is the
 guarantee that actually applies, so
-[`AssetEventListener`](src/main/java/com/pigfox/ledger/kafka/AssetEventListener.java) tracks
+[`AssetEventListener`](src/main/java/com/pigfox/springboot/kafka/AssetEventListener.java) tracks
 event ids and treats a repeat as a no-op, acknowledging offsets only after handling. Trusted
 packages are pinned to the domain package: left open, the JSON deserialiser instantiates
 whatever type a record's headers name, which turns topic write access into arbitrary class
@@ -400,7 +400,7 @@ vulnerable ships" rather than "nothing vulnerable is written down".
 
 ### Two independent authorization gates
 
-[`SecurityConfig`](src/main/java/com/pigfox/ledger/config/SecurityConfig.java) ends in
+[`SecurityConfig`](src/main/java/com/pigfox/springboot/config/SecurityConfig.java) ends in
 `anyRequest().authenticated()`, so a route added tomorrow is protected without anyone
 remembering to protect it. Writes are checked *again* at the method level with
 `@PreAuthorize`. The duplication is deliberate: the two gates fail independently, so a
@@ -424,16 +424,16 @@ anywhere in the repository.
 
 | Suite | Covers |
 |---|---|
-| [`OpenApiContractTest`](src/test/java/com/pigfox/ledger/api/OpenApiContractTest.java) | The committed spec and the implementation still describe the same API |
-| [`SignatureServiceTest`](src/test/java/com/pigfox/ledger/crypto/SignatureServiceTest.java) | Sign/recover round trip, wrong signer, wrong payload, malformed and unrecoverable signatures, bad keys |
-| [`AnchorServiceTest`](src/test/java/com/pigfox/ledger/chain/AnchorServiceTest.java) | Every anchor and read outcome, including an unreachable node and a reverting call |
-| [`ZeroTrustSecurityTest`](src/test/java/com/pigfox/ledger/api/ZeroTrustSecurityTest.java) | Anonymous callers, wrong-scope tokens, unlisted routes, hardening headers, no session cookie |
-| [`ManagementPortSecurityTest`](src/test/java/com/pigfox/ledger/api/ManagementPortSecurityTest.java) | The real two-port topology: health public, everything else on the telemetry port authenticated |
-| [`AssetApiIntegrationTest`](src/test/java/com/pigfox/ledger/api/AssetApiIntegrationTest.java) | Token to registration to verification over the real filter chain |
-| [`AssetServiceTest`](src/test/java/com/pigfox/ledger/service/AssetServiceTest.java) | Registration ordering, counters, and tamper detection using the real hasher and signer |
-| [`BrokerOutageIntegrationTest`](src/test/java/com/pigfox/ledger/api/BrokerOutageIntegrationTest.java) | A write still succeeds, with the real publisher, when no broker is reachable |
-| [`LedgerPropertiesValidationTest`](src/test/java/com/pigfox/ledger/config/LedgerPropertiesValidationTest.java) | A missing or too-short secret fails startup |
-| [`PrometheusNamingTest`](src/test/java/com/pigfox/ledger/config/PrometheusNamingTest.java) | The metric names that actually reach a scrape, which are not the names the code asks for |
+| [`OpenApiContractTest`](src/test/java/com/pigfox/springboot/api/OpenApiContractTest.java) | The committed spec and the implementation still describe the same API |
+| [`SignatureServiceTest`](src/test/java/com/pigfox/springboot/crypto/SignatureServiceTest.java) | Sign/recover round trip, wrong signer, wrong payload, malformed and unrecoverable signatures, bad keys |
+| [`AnchorServiceTest`](src/test/java/com/pigfox/springboot/chain/AnchorServiceTest.java) | Every anchor and read outcome, including an unreachable node and a reverting call |
+| [`ZeroTrustSecurityTest`](src/test/java/com/pigfox/springboot/api/ZeroTrustSecurityTest.java) | Anonymous callers, wrong-scope tokens, unlisted routes, hardening headers, no session cookie |
+| [`ManagementPortSecurityTest`](src/test/java/com/pigfox/springboot/api/ManagementPortSecurityTest.java) | The real two-port topology: health public, everything else on the telemetry port authenticated |
+| [`AssetApiIntegrationTest`](src/test/java/com/pigfox/springboot/api/AssetApiIntegrationTest.java) | Token to registration to verification over the real filter chain |
+| [`AssetServiceTest`](src/test/java/com/pigfox/springboot/service/AssetServiceTest.java) | Registration ordering, counters, and tamper detection using the real hasher and signer |
+| [`BrokerOutageIntegrationTest`](src/test/java/com/pigfox/springboot/api/BrokerOutageIntegrationTest.java) | A write still succeeds, with the real publisher, when no broker is reachable |
+| [`LedgerPropertiesValidationTest`](src/test/java/com/pigfox/springboot/config/LedgerPropertiesValidationTest.java) | A missing or too-short secret fails startup |
+| [`PrometheusNamingTest`](src/test/java/com/pigfox/springboot/config/PrometheusNamingTest.java) | The metric names that actually reach a scrape, which are not the names the code asks for |
 
 ### Mutation testing
 
@@ -448,7 +448,7 @@ survives is a line the suite runs past without looking, which is precisely the g
 coverage percentage hides.
 
 ```bash
-./mutants.sh                                   # everything under com.pigfox.ledger
+./mutants.sh                                   # everything under com.pigfox.springboot
 ./mutants.sh --class '*.AssetService'          # one class, much faster
 ./mutants.sh --html                            # also open the HTML report
 ```
