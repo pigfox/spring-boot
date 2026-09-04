@@ -1,0 +1,23 @@
+# Keep the build context small and free of anything the image must not contain.
+target/
+.git/
+.github/
+.idea/
+.vscode/
+contracts/out/
+contracts/cache/
+broadcast/
+*.log
+logs/
+docker-compose.yml
+README.md
+
+# Belt and braces: no secret-shaped file can reach the build context, so none can be
+# copied into a layer by a future careless COPY.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore

@@ -1,0 +1,85 @@
+# Every secret below is bound from a process environment variable and has no in-repo
+# default. There is no .env file: the empty fallbacks exist only so a missing variable
+# fails bean validation with a clear message instead of a placeholder resolution error.
+server:
+  port: 8087
+  shutdown: graceful
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+
+spring:
+  application:
+    name: ledger-node
+  main:
+    banner-mode: "off"
+  jackson:
+    default-property-inclusion: non_null
+    serialization:
+      write-dates-as-timestamps: false
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
+    consumer:
+      group-id: ledger-node
+      auto-offset-reset: earliest
+    listener:
+      ack-mode: manual_immediate
+
+# Telemetry is served on its own port so a network policy can expose scrape and probe
+# traffic to the cluster without exposing it alongside the public API on 8087.
+management:
+  server:
+    port: 55437
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+  metrics:
+    tags:
+      application: ledger-node
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4318/v1/traces}
+
+ledger:
+  auth:
+    client-id: ${LEDGER_CLIENT_ID:}
+    client-secret: ${LEDGER_CLIENT_SECRET:}
+    jwt-secret: ${LEDGER_JWT_SECRET:}
+    token-ttl: PT15M
+    scope: ledger.read ledger.write
+  crypto:
+    signing-key: ${LEDGER_SIGNING_KEY:}
+  chain:
+    enabled: ${LEDGER_CHAIN_ENABLED:true}
+    rpc-url: ${ETH_RPC_URL:http://127.0.0.1:8545}
+    registry-address: ${LEDGER_REGISTRY_CONTRACT:}
+    chain-id: ${LEDGER_CHAIN_ID:31337}
+    gas-limit: 150000
+    gas-price: 1000000000
+  events:
+    topic: asset.events
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    com.pigfox.ledger: INFO
+    org.apache.kafka.clients: WARN

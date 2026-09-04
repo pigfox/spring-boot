@@ -1,0 +1,213 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Least privilege. Nothing in this pipeline writes to the repository, publishes an image,
+# or reads a secret, so read access to the contents is the whole grant.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '21'
+  IMAGE_NAME: ledger-node
+
+jobs:
+  build:
+    name: Build, test and coverage gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: maven
+
+      # Verify runs the suite, then the JaCoCo report and the coverage gate. The gate is
+      # configured in pom.xml at 100% line and branch, so a new code path without a test
+      # fails here rather than at review time.
+      - name: Build, test and enforce coverage
+        run: ./mvnw -B --no-transfer-progress verify
+
+      - name: Summarise coverage
+        if: always()
+        run: |
+          REPORT=target/site/jacoco/jacoco.csv
+          if [ ! -f "$REPORT" ]; then echo "No coverage report produced." >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          awk -F, 'NR>1 {
+            bm+=$6; bc+=$7; lm+=$8; lc+=$9
+          } END {
+            printf "## Coverage\n\n| Counter | Covered | Total | %% |\n|---|---|---|---|\n";
+            printf "| Lines | %d | %d | %.2f%% |\n", lc, lc+lm, (lc+lm)?100*lc/(lc+lm):100;
+            printf "| Branches | %d | %d | %.2f%% |\n", bc, bc+bm, (bc+bm)?100*bc/(bc+bm):100;
+          }' "$REPORT" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+          retention-days: 7
+
+      - name: Upload the application jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: application-jar
+          path: target/ledger-node-*.jar
+          retention-days: 7
+
+  secrets-scan:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Full history: a secret that was committed and then removed is still a leaked
+      # secret, and a shallow clone would not see it.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.21.2
+        run: |
+          curl -fsSL -o gitleaks.tar.gz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      # --redact keeps any finding out of the public log; the report artifact carries the
+      # detail. A non-zero exit fails the job.
+      - name: Scan the working tree and full history
+        run: |
+          gitleaks detect \
+            --source . \
+            --no-banner \
+            --redact \
+            --report-format sarif \
+            --report-path gitleaks.sarif \
+            --exit-code 1
+
+      - name: Upload the gitleaks report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gitleaks-report
+          path: gitleaks.sarif
+          retention-days: 7
+
+  dependency-scan:
+    name: Filesystem and dependency scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # Reads pom.xml and the lockfile-equivalent dependency tree, so a vulnerable
+      # transitive dependency is caught before an image is ever built.
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+  container:
+    name: Container build and image scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [build, secrets-scan, dependency-scan]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Loaded into the local daemon rather than pushed: this pipeline proves the image
+      # builds and is clean, and publishing is a separate, deliberate act.
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy image scan
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: image
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      # A smoke test against the real image. The node must refuse to start without its
+      # secrets, and must come up and serve an unauthenticated health probe with them.
+      - name: Verify the image starts and refuses to start unconfigured
+        run: |
+          set -euo pipefail
+          echo "--- must fail with no secrets ---"
+          if docker run --rm ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+               --spring.kafka.admin.auto-create=false \
+               --spring.kafka.listener.auto-startup=false > unconfigured.log 2>&1; then
+            echo "FAIL: the node started without any secrets configured"
+            exit 1
+          fi
+          grep -q "APPLICATION FAILED TO START" unconfigured.log
+          echo "OK: refused to start, naming the missing properties"
+
+          echo "--- must start when configured ---"
+          docker run -d --name ledger-smoke -p 8087:8087 -p 55437:55437 \
+            -e LEDGER_SIGNING_KEY="0x$(openssl rand -hex 32)" \
+            -e LEDGER_JWT_SECRET="$(openssl rand -hex 32)" \
+            -e LEDGER_CLIENT_ID=ci-client \
+            -e LEDGER_CLIENT_SECRET="$(openssl rand -hex 16)" \
+            -e LEDGER_CHAIN_ENABLED=false \
+            ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --spring.kafka.admin.auto-create=false \
+            --spring.kafka.listener.auto-startup=false
+
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:55437/actuator/health > health.json 2>/dev/null; then
+              echo "OK: health is public on the telemetry port"; cat health.json; break
+            fi
+            if [ "$i" = "60" ]; then echo "FAIL: never became healthy"; docker logs ledger-smoke; exit 1; fi
+            sleep 2
+          done
+
+          echo "--- the API must reject an anonymous caller ---"
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8087/api/v1/assets)
+          test "$STATUS" = "401" || { echo "FAIL: expected 401, got $STATUS"; exit 1; }
+          echo "OK: API returned 401 without a token"
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs ledger-smoke || true
+
+      - name: Stop the container
+        if: always()
+        run: docker rm -f ledger-smoke || true

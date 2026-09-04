@@ -1,0 +1,38 @@
+# Build output
+target/
+!.mvn/wrapper/maven-wrapper.properties
+
+# Maven wrapper JAR is deliberately absent: .mvn/wrapper/maven-wrapper.properties sets
+# distributionType=only-script, so mvnw fetches Maven itself and no binary is committed.
+.mvn/wrapper/maven-wrapper.jar
+
+# Solidity build output
+contracts/out/
+contracts/cache/
+broadcast/
+
+# IDE and OS
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.classpath
+.project
+.settings/
+.DS_Store
+
+# Logs and local scratch
+*.log
+logs/
+
+# Secrets never belong in the repository. This node reads every secret from the process
+# environment, so there is no .env file to commit; the entries below exist so an
+# accidentally created one cannot be added.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.jks
+*.keystore

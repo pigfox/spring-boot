@@ -1,0 +1,353 @@
+openapi: 3.0.3
+info:
+  title: Ledger Node Asset API
+  description: |
+    API-first contract for the ledger-node service.
+
+    The service records assets, anchors a keccak256 hash of the canonical asset
+    payload on an EVM chain, and signs that hash with a secp256k1 key held only in
+    the process environment. Every route except `POST /api/v1/auth/token` and
+    `GET /actuator/health` requires a bearer JWT (deny-by-default, stateless).
+
+    This document is the source of truth. The implementation is built against it and
+    `OpenApiContractTest` asserts the springdoc-generated description still matches it.
+  version: 1.0.0
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: http://localhost:8087
+    description: Local application port
+tags:
+  - name: Authentication
+    description: Token issuance for the zero-trust perimeter.
+  - name: Assets
+    description: Asset registration, retrieval and cryptographic verification.
+paths:
+  /api/v1/auth/token:
+    post:
+      tags: [Authentication]
+      summary: Issue an access token
+      description: >
+        Exchanges client credentials for a short-lived HS256 JWT. This is the only
+        write route that is not itself authenticated. Credentials are read from the
+        process environment, never from a file.
+      operationId: issueToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Token issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Malformed request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '401':
+          description: Invalid client credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/assets:
+    post:
+      tags: [Assets]
+      summary: Register an asset
+      description: >
+        Canonicalises the payload, computes its keccak256 hash, signs the hash with the
+        node secp256k1 key, attempts to anchor the hash on chain, and publishes an
+        `asset.events` record. Requires the `ledger.write` scope. If the chain is
+        unreachable or rejects the transaction the asset is still created and
+        `anchorTxHash` is absent.
+      operationId: createAsset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAssetRequest'
+      responses:
+        '201':
+          description: Asset registered.
+          headers:
+            Location:
+              description: Canonical URI of the created asset.
+              schema:
+                type: string
+                format: uri
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetResponse'
+        '400':
+          description: Validation failure.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '403':
+          description: Token lacks the ledger.write scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+    get:
+      tags: [Assets]
+      summary: List registered assets
+      description: Returns every asset known to this node, newest first. Requires the `ledger.read` scope.
+      operationId: listAssets
+      responses:
+        '200':
+          description: Assets returned.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AssetResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/assets/{id}:
+    get:
+      tags: [Assets]
+      summary: Fetch one asset
+      operationId: getAsset
+      parameters:
+        - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: Asset found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssetResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '404':
+          description: No such asset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+  /api/v1/assets/{id}/verify:
+    post:
+      tags: [Assets]
+      summary: Verify an asset signature and anchor
+      description: >
+        Recomputes the payload hash, recovers the secp256k1 public key from the stored
+        signature, and compares the recovered address with the stored signer. Also
+        reports whether the hash is anchored on chain. Requires the `ledger.write` scope.
+      operationId: verifyAsset
+      parameters:
+        - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: Verification completed. Check `signatureValid` for the outcome.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationResponse'
+        '401':
+          description: Missing or invalid bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '403':
+          description: Token lacks the ledger.write scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+        '404':
+          description: No such asset.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProblemDetail'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: HS256 JWT issued by `POST /api/v1/auth/token`.
+  parameters:
+    AssetId:
+      name: id
+      in: path
+      required: true
+      description: Asset identifier returned at registration.
+      schema:
+        type: string
+        format: uuid
+  schemas:
+    TokenRequest:
+      type: object
+      required: [clientId, clientSecret]
+      properties:
+        clientId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          example: ledger-client
+        clientSecret:
+          type: string
+          format: password
+          minLength: 1
+          example: s3cr3t-from-environment
+    TokenResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, scope]
+      properties:
+        accessToken:
+          type: string
+          description: Signed HS256 JWT.
+        tokenType:
+          type: string
+          enum: [Bearer]
+          example: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          description: Lifetime in seconds.
+          example: 900
+        scope:
+          type: string
+          description: Space-delimited granted scopes.
+          example: ledger.read ledger.write
+    CreateAssetRequest:
+      type: object
+      required: [name, assetType, owner]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: Unit 4B, Harbour Court
+        assetType:
+          type: string
+          minLength: 1
+          maxLength: 64
+          example: REAL_ESTATE
+        owner:
+          type: string
+          minLength: 1
+          maxLength: 200
+          example: Estate JV
+        metadata:
+          type: object
+          description: Free-form string attributes folded into the canonical payload.
+          additionalProperties:
+            type: string
+          example:
+            jurisdiction: GB
+            titleNumber: NGL123456
+    AssetResponse:
+      type: object
+      required: [id, name, assetType, owner, payloadHash, signature, signerAddress, anchored, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        assetType:
+          type: string
+        owner:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        payloadHash:
+          type: string
+          description: 0x-prefixed keccak256 of the canonical payload.
+          pattern: '^0x[0-9a-f]{64}$'
+        signature:
+          type: string
+          description: 0x-prefixed 65-byte secp256k1 signature (r || s || v).
+          pattern: '^0x[0-9a-f]{130}$'
+        signerAddress:
+          type: string
+          description: 0x-prefixed EIP-55 address derived from the signing key.
+          pattern: '^0x[0-9a-fA-F]{40}$'
+        anchored:
+          type: boolean
+          description: True when the hash was accepted by the chain.
+        anchorTxHash:
+          type: string
+          nullable: true
+          description: Anchor transaction hash, absent when the chain was unavailable.
+        createdAt:
+          type: string
+          format: date-time
+    VerificationResponse:
+      type: object
+      required: [assetId, payloadHash, signatureValid, recoveredAddress, signerAddress, anchored, verifiedAt]
+      properties:
+        assetId:
+          type: string
+          format: uuid
+        payloadHash:
+          type: string
+          pattern: '^0x[0-9a-f]{64}$'
+        signatureValid:
+          type: boolean
+          description: True when the address recovered from the signature equals the stored signer.
+        recoveredAddress:
+          type: string
+          nullable: true
+        signerAddress:
+          type: string
+        anchored:
+          type: boolean
+        anchorTxHash:
+          type: string
+          nullable: true
+        verifiedAt:
+          type: string
+          format: date-time
+    ProblemDetail:
+      type: object
+      description: RFC 7807 problem detail.
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+          format: int32
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri
+security:
+  - bearerAuth: []
