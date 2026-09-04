@@ -116,17 +116,41 @@ jobs:
     name: Filesystem and dependency scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Needs the jar, because scanning the source tree alone is not enough — see below.
+    needs: [build]
     steps:
       - uses: actions/checkout@v7
 
-      # Reads pom.xml and the lockfile-equivalent dependency tree, so a vulnerable
-      # transitive dependency is caught before an image is ever built.
+      # Scans the tree: pom.xml for declared dependencies, plus Dockerfile and workflow
+      # misconfigurations and any committed secret.
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+          format: table
+
+      - name: Download the application jar
+        uses: actions/download-artifact@v7
+        with:
+          name: application-jar
+          path: scan
+
+      # The tree scan sees the ~15 dependencies pom.xml names. The jar contains ~120,
+      # because Spring Boot starters and web3j pull deep transitive trees, and a CVE in one
+      # of those ships just as surely as a CVE in a declared one. Scanning the built
+      # artifact is what makes this gate mean "nothing vulnerable ships" rather than
+      # "nothing vulnerable is written down".
+      - name: Trivy scan of the built artifact
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: scan
+          scanners: vuln
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: '1'

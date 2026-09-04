@@ -76,6 +76,10 @@ ledger:
 springdoc:
   api-docs:
     path: /v3/api-docs
+    # The committed contract is OpenAPI 3.0 and uses 3.0 constructs such as
+    # `nullable: true`. springdoc defaults to emitting 3.1, which OpenApiContractTest
+    # would flag as drift, so the served description is pinned to match the contract.
+    version: openapi_3_0
   swagger-ui:
     path: /swagger-ui.html
 

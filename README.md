@@ -1,6 +1,6 @@
 # ledger-node
 
-An API-first blockchain ledger service in Java 21 and Spring Boot 3.3. It registers assets,
+An API-first blockchain ledger service in Java 21 and Spring Boot 3.5. It registers assets,
 anchors a keccak256 hash of each asset payload on an EVM chain, signs that hash with a
 secp256k1 key held only in the process environment, and publishes the result to Kafka —
 behind a stateless, deny-by-default JWT perimeter, with Prometheus metrics and OTLP traces.
@@ -18,7 +18,7 @@ Contract      src/main/resources/openapi/asset-api.yaml
 
 | Requirement | Where it lives | How it is proved |
 |---|---|---|
-| Java + Spring Boot | [`pom.xml`](pom.xml), [`LedgerNodeApplication.java`](src/main/java/com/pigfox/ledger/LedgerNodeApplication.java) | Java 21, Boot 3.3.5; [`LedgerNodeApplicationTest`](src/test/java/com/pigfox/ledger/LedgerNodeApplicationTest.java) boots the real entry point |
+| Java + Spring Boot | [`pom.xml`](pom.xml), [`LedgerNodeApplication.java`](src/main/java/com/pigfox/ledger/LedgerNodeApplication.java) | Java 21, Boot 3.5.16; [`LedgerNodeApplicationTest`](src/test/java/com/pigfox/ledger/LedgerNodeApplicationTest.java) boots the real entry point |
 | API-first design | [`asset-api.yaml`](src/main/resources/openapi/asset-api.yaml) written first, then [`AssetController`](src/main/java/com/pigfox/ledger/api/AssetController.java), [`AuthController`](src/main/java/com/pigfox/ledger/api/AuthController.java), [`OpenApiConfig`](src/main/java/com/pigfox/ledger/config/OpenApiConfig.java) | [`OpenApiContractTest`](src/test/java/com/pigfox/ledger/api/OpenApiContractTest.java) diffs the committed spec against the springdoc-generated description on every build — paths, methods, operation ids, schemas, security and response codes |
 | Blockchain networks | [`AnchorService`](src/main/java/com/pigfox/ledger/chain/AnchorService.java), [`Web3Config`](src/main/java/com/pigfox/ledger/config/Web3Config.java) | web3j over JSON-RPC; [`AnchorServiceTest`](src/test/java/com/pigfox/ledger/chain/AnchorServiceTest.java) covers anchored, rejected, unreachable and disabled |
 | Smart contracts | [`contracts/AssetRegistry.sol`](contracts/AssetRegistry.sol) | `bytes32 → address` registry with an `AssetAnchored` event, first-write-wins; called through `registerAsset` / `signerOf` in `AnchorService` |
@@ -71,6 +71,28 @@ The response carries the `payloadHash`, the 65-byte `signature`, the `signerAddr
 `anchorTxHash` when the chain accepted the anchor. `POST /api/v1/assets/{id}/verify` then
 recomputes the hash from stored fields and recovers the signer from the signature, so a
 tampered record fails verification even though nothing about it was re-signed.
+
+## A note on the Spring Boot version
+
+This was specified as Spring Boot 3.3.x and is built on 3.5.16 instead. The two
+requirements collided and one had to give.
+
+Boot 3.3.x is out of OSS support and carries
+[CVE-2026-22733](https://avd.aquasec.com/nvd/cve-2026-22733), an **authentication bypass in
+Spring Boot Actuator**, patched only in 3.5.12 and 4.0.4 — there is no 3.3.x fix, and 3.3.13
+is the end of that line. Since the CI gate is required to fail on HIGH and CRITICAL
+findings, staying on 3.3.x meant either a permanently red pipeline or suppressing the
+scanner. Suppressing an actuator authentication bypass in a repository whose central claim
+is a deny-by-default actuator would be self-defeating.
+
+Reverting is a one-line change to the parent version in [`pom.xml`](pom.xml) if the 3.3.x
+pin matters more, though `springdoc` must go back to 2.6.x with it — 2.8.x requires Spring
+Framework 6.2.
+
+The same reasoning drove the transitive pins in [`pom.xml`](pom.xml). Tomcat, spring-kafka,
+micrometer and BouncyCastle are held ahead of the versions the Boot BOM manages, because
+those carry advisories the gate rejects; each is a patch bump inside the same minor line, and
+each should be dropped once the BOM catches up.
 
 ## Configuration
 
@@ -218,6 +240,15 @@ event ids and treats a repeat as a no-op, acknowledging offsets only after handl
 packages are pinned to the domain package: left open, the JSON deserialiser instantiates
 whatever type a record's headers name, which turns topic write access into arbitrary class
 loading.
+
+### Scanning the artifact, not the manifest
+
+Trivy over the source tree reads `pom.xml`, which names about fifteen dependencies. The jar
+contains about 120, because the Boot starters and web3j pull deep transitive trees — and a
+CVE in a transitive dependency ships exactly as surely as one in a declared dependency. The
+first version of this pipeline scanned only the tree and reported two findings; scanning the
+built artifact surfaced twenty-three. CI now scans both, so the gate means "nothing
+vulnerable ships" rather than "nothing vulnerable is written down".
 
 ### Two independent authorization gates
 

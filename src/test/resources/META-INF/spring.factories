@@ -1,0 +1,6 @@
+# Registers the listener that LedgerNodeApplicationTest uses to get hold of the context
+# that main() starts and discards. spring.factories is the version-stable way to register
+# an ApplicationListener; the context.listener.classes property this previously relied on
+# is no longer honoured. The listener ignores every context that does not carry the marker
+# property that test passes, so it can never capture — or close — a cached test context.
+org.springframework.context.ApplicationListener=com.pigfox.ledger.LedgerNodeApplicationTest$ContextCapture

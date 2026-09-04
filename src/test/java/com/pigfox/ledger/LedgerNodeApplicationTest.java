@@ -22,20 +22,29 @@ import org.springframework.context.ConfigurableApplicationContext;
  *
  * <p>It has to start as a real web application, because the security chain is built from
  * {@code HttpSecurity} and that bean only exists in a servlet context. Both ports are
- * randomised so the test never collides with a running node, and the context is captured
- * through {@code context.listener.classes} — {@code main} returns nothing, and a booted
- * server left running for the rest of the suite would be a leak.
+ * randomised so the test never collides with a running node.
+ *
+ * <p>{@code main} returns nothing, and a booted server left running for the rest of the
+ * suite would be a leak, so the context is captured by {@link ContextCapture} — registered
+ * in {@code src/test/resources/META-INF/spring.factories} and armed only by the marker
+ * property below, so it cannot capture or close any other test's cached context.
  */
 class LedgerNodeApplicationTest {
 
     private static final AtomicReference<ConfigurableApplicationContext> STARTED =
             new AtomicReference<>();
 
+    /** Property that arms {@link ContextCapture}; no other context sets it. */
+    private static final String CAPTURE_MARKER = "ledger.test.capture-context";
+
     /** Captures the context {@code main} does not hand back. Must be public for Boot to load it. */
     public static class ContextCapture implements ApplicationListener<ApplicationReadyEvent> {
         @Override
         public void onApplicationEvent(ApplicationReadyEvent event) {
-            STARTED.set(event.getApplicationContext());
+            ConfigurableApplicationContext context = event.getApplicationContext();
+            if (context.getEnvironment().getProperty(CAPTURE_MARKER, Boolean.class, false)) {
+                STARTED.set(context);
+            }
         }
     }
 
@@ -61,7 +70,7 @@ class LedgerNodeApplicationTest {
                 "--ledger.auth.client-secret=" + TestFixtures.CLIENT_SECRET,
                 "--ledger.auth.jwt-secret=" + TestFixtures.JWT_SECRET,
                 "--ledger.crypto.signing-key=" + TestFixtures.PRIVATE_KEY,
-                "--context.listener.classes=" + ContextCapture.class.getName(),
+                "--" + CAPTURE_MARKER + "=true",
         });
 
         ConfigurableApplicationContext context = STARTED.get();
