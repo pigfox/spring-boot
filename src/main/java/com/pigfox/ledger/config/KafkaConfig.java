@@ -12,11 +12,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
@@ -100,15 +102,33 @@ public class KafkaConfig {
     }
 
     /**
-     * @param factory the restricted consumer factory
+     * Builds the listener container factory that {@code @KafkaListener} names.
+     *
+     * <p>Boot applies {@code spring.kafka.listener.*} to the container factory it
+     * auto-configures, and only to that one. This factory is built by hand, so every
+     * setting it needs has to be applied here — a lesson learned when
+     * {@code ack-mode: manual_immediate} sat in {@code application.yml} doing nothing and
+     * every delivered record failed with "No Acknowledgment available as an argument".
+     *
+     * <p>The acknowledgement mode is fixed rather than read from configuration because
+     * {@link com.pigfox.ledger.kafka.AssetEventListener} takes an {@link Acknowledgment}
+     * parameter. Any other mode leaves that parameter unpopulated and breaks every
+     * delivery, so it is not a decision configuration should be able to make.
+     *
+     * @param factory    the restricted consumer factory
+     * @param properties Boot's Kafka settings, for the startup behaviour tests depend on
      * @return the listener container factory referenced by {@code @KafkaListener}
      */
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, AssetEvent> assetEventListenerContainerFactory(
-            ConsumerFactory<String, AssetEvent> factory) {
+            ConsumerFactory<String, AssetEvent> factory, KafkaProperties properties) {
         ConcurrentKafkaListenerContainerFactory<String, AssetEvent> containerFactory =
                 new ConcurrentKafkaListenerContainerFactory<>();
         containerFactory.setConsumerFactory(factory);
+        containerFactory.getContainerProperties().setAckMode(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+        // Honours spring.kafka.listener.auto-startup, which unit tests set false so that no
+        // container reaches for a broker.
+        containerFactory.setAutoStartup(properties.getListener().isAutoStartup());
         return containerFactory;
     }
 

@@ -24,7 +24,11 @@ spring:
       group-id: spring-boot
       auto-offset-reset: earliest
     listener:
-      ack-mode: manual_immediate
+      # The acknowledgement mode is set in KafkaConfig, not here: spring.kafka.listener.*
+      # only reaches the container factory Boot auto-configures, and this service builds
+      # its own. auto-startup is read from here by that factory, so tests can switch the
+      # consumer off.
+      auto-startup: true
 
 # Telemetry is served on its own port so a network policy can expose scrape and probe
 # traffic to the cluster without exposing it alongside the public API on 8087.

@@ -71,6 +71,48 @@ jobs:
           path: target/spring-boot-*.jar
           retention-days: 7
 
+  shell-lint:
+    name: Shell script lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      # shellcheck is preinstalled on the GitHub runner image, so this needs no setup step
+      # and no third-party action. -x follows sourced files; there are none today, but it
+      # keeps the check honest if that changes.
+      - name: shellcheck
+        run: |
+          shellcheck --version
+          shellcheck -x run.sh stop.sh
+
+      # A syntax error in a script that is never executed in CI would otherwise ship.
+      - name: Verify the scripts parse and are executable
+        run: |
+          set -euo pipefail
+          for script in run.sh stop.sh; do
+            bash -n "$script"
+            test -x "$script" || { echo "$script is not executable"; exit 1; }
+            echo "$script: parses, executable"
+          done
+
+      # run.sh must refuse to start before it touches docker when a credential is missing.
+      # Asserting it here keeps the no-.env rule from quietly regressing.
+      - name: Verify run.sh preflight fails closed
+        run: |
+          set -euo pipefail
+          if env -u LEDGER_SIGNING_KEY -u LEDGER_JWT_SECRET \
+                 -u LEDGER_CLIENT_ID -u LEDGER_CLIENT_SECRET \
+                 ./run.sh > preflight.log 2>&1; then
+            echo "FAIL: run.sh started with no credentials set"
+            exit 1
+          fi
+          grep -q 'LEDGER_SIGNING_KEY' preflight.log
+          grep -q 'LEDGER_JWT_SECRET' preflight.log
+          grep -q 'LEDGER_CLIENT_ID' preflight.log
+          grep -q 'LEDGER_CLIENT_SECRET' preflight.log
+          echo "OK: refused, naming every missing variable"
+
   secrets-scan:
     name: Secret scan
     runs-on: ubuntu-latest
@@ -160,7 +202,7 @@ jobs:
     name: Container build and image scan
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: [build, secrets-scan, dependency-scan]
+    needs: [build, secrets-scan, dependency-scan, shell-lint]
     steps:
       - uses: actions/checkout@v7
 

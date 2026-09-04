@@ -17,6 +17,7 @@ import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.support.serializer.ErrorHandlingDeserializer;
 import org.springframework.kafka.support.serializer.JsonDeserializer;
 import org.springframework.kafka.support.serializer.JsonSerializer;
@@ -106,6 +107,39 @@ class KafkaConfigTest {
     }
 
     @Test
+    @DisplayName("the container factory acknowledges manually, as the listener signature demands")
+    void containerFactoryAcknowledgesManually() {
+        // AssetEventListener takes an Acknowledgment parameter. Any other ack mode leaves
+        // it unpopulated and every delivery fails with "No Acknowledgment available as an
+        // argument" — which is exactly what happened while this was left to a
+        // spring.kafka.listener.* property that never reaches a hand-built factory.
+        ConcurrentKafkaListenerContainerFactory<String, AssetEvent> containerFactory =
+                config.assetEventListenerContainerFactory(
+                        config.assetEventConsumerFactory(kafkaProperties), kafkaProperties);
+
+        // Asserted on a container the factory actually builds, which is what the
+        // annotation-driven registrar does, rather than on the factory's own template.
+        assertThat(containerFactory.createContainer(TestFixtures.TOPIC)
+                .getContainerProperties()
+                .getAckMode())
+                .isEqualTo(ContainerProperties.AckMode.MANUAL_IMMEDIATE);
+    }
+
+    @Test
+    @DisplayName("the container factory honours spring.kafka.listener.auto-startup")
+    void containerFactoryHonoursAutoStartup() {
+        // Unit tests set this false so no container reaches for a broker. Boot applies it
+        // only to the factory it auto-configures, so this factory has to read it itself.
+        kafkaProperties.getListener().setAutoStartup(false);
+
+        ConcurrentKafkaListenerContainerFactory<String, AssetEvent> containerFactory =
+                config.assetEventListenerContainerFactory(
+                        config.assetEventConsumerFactory(kafkaProperties), kafkaProperties);
+
+        assertThat(containerFactory.createContainer(TestFixtures.TOPIC).isAutoStartup()).isFalse();
+    }
+
+    @Test
     @DisplayName("the template and listener container factory are wired to those factories")
     void wiresTemplateAndContainerFactory() {
         ProducerFactory<String, AssetEvent> producerFactory =
@@ -115,7 +149,7 @@ class KafkaConfigTest {
 
         KafkaTemplate<String, AssetEvent> template = config.assetEventKafkaTemplate(producerFactory);
         ConcurrentKafkaListenerContainerFactory<String, AssetEvent> containerFactory =
-                config.assetEventListenerContainerFactory(consumerFactory);
+                config.assetEventListenerContainerFactory(consumerFactory, kafkaProperties);
 
         assertThat(template.getProducerFactory()).isSameAs(producerFactory);
         assertThat(containerFactory.getConsumerFactory()).isSameAs(consumerFactory);

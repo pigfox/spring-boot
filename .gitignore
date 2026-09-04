@@ -29,6 +29,9 @@ broadcast/
 *.log
 logs/
 
+# run.sh keeps the app pid and log here.
+.run/
+
 # Secrets never belong in the repository. This node reads every secret from the process
 # environment, so there is no .env file to commit; the entries below exist so an
 # accidentally created one cannot be added.

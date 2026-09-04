@@ -133,32 +133,65 @@ cluster without exposing it beside the public API. Both ports are reserved for t
 which is why `docker-compose.yml` binds neither. To collapse them onto 8087, remove
 `management.server.port` from [`application.yml`](src/main/resources/application.yml).
 
-## Running it
+## Running locally
+
+[`run.sh`](run.sh) and [`stop.sh`](stop.sh) drive the whole local stack. Both resolve paths
+from their own location, so they work from any directory.
 
 ```bash
-# 1. Local dependencies: Kafka in KRaft mode on 19092, anvil on 8545.
-docker compose up -d
-
-# 2. A signing key. anvil prints ten funded test accounts and their private keys at
-#    startup; the compose file fixes the mnemonic, so they are the same every time.
-docker compose logs anvil | sed -n '/Private Keys/,/^$/p'
-
-# 3. Secrets, into this shell only. Never a file.
-export LEDGER_SIGNING_KEY=<one of the private keys printed above>
+# Secrets, into this shell only. run.sh reads them from the environment and nowhere else.
+export LEDGER_SIGNING_KEY=<a 32-byte hex private key>
 export LEDGER_JWT_SECRET=$(openssl rand -hex 32)
 export LEDGER_CLIENT_ID=local-client
 export LEDGER_CLIENT_SECRET=$(openssl rand -hex 16)
 
-# 4. Deploy the registry and point the node at it (see below), then run.
-./mvnw -B spring-boot:run
+./run.sh          # dependencies, wait for them, then the app on 8087
+./stop.sh         # app down, then dependencies down
 ```
 
-Those anvil keys are published in Foundry's documentation and funded only on a throwaway
-local chain. They are fine for step 3 and must never be used anywhere else, which is also
-why none of them is written down in this repository.
+`run.sh` requires these four variables and refuses to start without them. It checks before
+it touches docker, so a missing credential costs a second rather than a container start, and
+it prints every missing name at once instead of one per attempt:
 
-Without step 4 the node still runs: anchoring reports `DISABLED`, assets are still hashed,
-signed, stored and published, and `anchored` comes back `false`.
+| Variable | Meaning |
+|---|---|
+| `LEDGER_SIGNING_KEY` | secp256k1 private key, 32 bytes hex |
+| `LEDGER_JWT_SECRET` | HS256 secret, at least 32 bytes |
+| `LEDGER_CLIENT_ID` | client id the token endpoint accepts |
+| `LEDGER_CLIENT_SECRET` | client secret the token endpoint accepts |
+
+There is no `.env` file, neither script reads or writes one, and no secret is printed. The
+signing key and the JWT secret have no default anywhere in this repository, by design.
+
+| Flag | Effect |
+|---|---|
+| `run.sh` | Dependencies, wait for each to accept connections, then the app |
+| `run.sh --deps-only` | Kafka and anvil only; no app |
+| `run.sh --no-deps` | App only; assumes the dependencies are already up |
+| `stop.sh` | Stop the app, then the stack. Volumes kept |
+| `stop.sh --clean` | Also remove the volumes, discarding Kafka's log and anvil's chain state |
+
+`run.sh` waits by connecting to each port rather than sleeping a fixed interval, then polls
+health until the app answers. It is safe to run twice: an already-running app is detected by
+its recorded pid, and a port held by something else is reported rather than crashed into.
+`stop.sh` exits 0 when nothing is running, so stopping twice — or from a teardown hook — is
+not an error. The pid and log live in `.run/`, which is ignored.
+
+A signing key for local use: anvil prints ten funded test accounts and their private keys at
+startup, and the compose file fixes the mnemonic so they are the same every time.
+
+```bash
+./run.sh --deps-only
+docker compose logs anvil | sed -n '/Private Keys/,/^$/p'
+```
+
+Those keys are published in Foundry's documentation and funded only on a throwaway local
+chain. They are fine here and must never be used anywhere else, which is why none of them is
+written down in this repository.
+
+Anchoring stays off until a registry address is configured: the node still runs, assets are
+still hashed, signed, stored and published, and `anchored` comes back `false`. See
+[The contract](#the-contract) to deploy it and set `LEDGER_REGISTRY_CONTRACT`.
 
 ### The contract
 
