@@ -48,14 +48,6 @@ missing acknowledgment.
 `toString()`, so Spring's request logging wrote the credential out at DEBUG. Four types now
 redact.
 
-An API-first blockchain ledger service in Java 21 and Spring Boot 3.5. It registers assets,
-anchors a keccak256 hash of each asset payload on an EVM chain, signs that hash with a
-secp256k1 key held only in the process environment, and publishes the result to Kafka —
-behind a stateless, deny-by-default JWT perimeter, with Prometheus metrics and OTLP traces.
-
-Everything below is implemented and tested. 216 tests, 100% line and branch coverage,
-enforced by a build gate rather than asserted in prose.
-
 ```
 Clone         git clone git@github.com:pigfox/spring-boot.git
 API           http://localhost:8087
