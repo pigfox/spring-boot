@@ -55,7 +55,9 @@ fail() {
 }
 
 run_analysis() {
-    local args=(-B -P mutation org.pitest:pitest-maven:mutationCoverage)
+    # test-compile first: the pitest goal does not compile, so invoking it alone would
+    # happily analyse whatever stale classes happen to be in target/ from an earlier build.
+    local args=(-B -P mutation test-compile org.pitest:pitest-maven:mutationCoverage)
 
     if [ -n "$CLASS_PATTERN" ]; then
         log "mutating ${CLASS_PATTERN}"

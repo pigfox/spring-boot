@@ -421,9 +421,35 @@ only when named. A normal build, `./mvnw verify`, and every CI job are unaffecte
 and outcome, and no CI job runs it today.
 
 It is **report only** on purpose. There is no mutation threshold and nothing fails on a low
-score. A gate set before anyone has read the survivors is just a number to be gamed, and
-some survivors are equivalent mutants — changes that cannot alter observable behaviour and
-therefore cannot be killed by any test. Those are worth recognising, not chasing.
+score. A gate set before anyone has read the survivors is just a number to be gamed.
+
+#### Where it stands
+
+| Metric | Result |
+|---|---|
+| Line coverage | 100.00% (444/444) |
+| Branch coverage | 100.00% (66/66) |
+| **Mutation score** | **97.8%** — 134 of 137 mutants detected |
+| No-coverage mutants | 0 |
+
+Three mutants survive, and all three are expected to. They are recorded here so nobody has
+to rediscover them:
+
+| Survivor | Why it lives |
+|---|---|
+| `SecurityConfig:94` — remove `setAuthorityPrefix("SCOPE_")` | **Equivalent mutant.** `SCOPE_` is already Spring's default prefix, so removing the call cannot change behaviour and no test can kill it. |
+| `SecurityConfig:65` — `filterChain()` returns null | **A limitation of the tool, not a gap.** `@Bean` methods run once, when the first test builds the context; every later test reuses the cached one. PIT therefore attributes this line to a handful of tests and never reruns it against `ZeroTrustSecurityTest`, which does assert the perimeter. PIT flags this itself: *"Project uses Spring, but the Arcmutate Spring plugin is not present."* |
+| `AssetEventListener:62` — negated conditional | **Log-only.** The expression is an argument to `log.info`, so flipping it changes a logged `anchored=` value and nothing else observable. |
+
+The fourth and fifth survivors are gone. `setAuthoritiesClaimName("scope")` is not redundant
+— Spring's default reads `scope` *or* `scp`, so pinning the claim narrows what is accepted,
+and a token smuggling authorities under `scp` would otherwise be honoured.
+`ConfigBeansTest.ignoresScpClaim` now asserts that such a token is granted nothing, which
+kills that mutant and, as it turns out, the `setJwtGrantedAuthoritiesConverter` mutant on
+line 97 as well: removing that call falls back to a converter that would accept `scp`.
+
+Nothing was written to chase the remaining three. An equivalent mutant cannot be killed, and
+a test asserting the content of a log line would be a test of the logger.
 
 ## Container
 

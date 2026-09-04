@@ -115,6 +115,46 @@ class ConfigBeansTest {
     }
 
     @Test
+    @DisplayName("authorities under scp are ignored, because only scope is honoured")
+    void ignoresScpClaim() {
+        // Spring's default converter reads "scope" and falls back to "scp", so a token
+        // minted by some other issuer could smuggle authorities in under scp. SecurityConfig
+        // pins the claim name to "scope" precisely to close that door, and without this test
+        // nothing notices if the pinning is removed: the default would still satisfy every
+        // other assertion here, because every other token in this suite uses "scope".
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .claim(JwtClaimNames.SUB, "client")
+                .claim("scp", "ledger.read ledger.write")
+                .build();
+
+        AbstractAuthenticationToken authentication =
+                securityConfig.jwtAuthenticationConverter().convert(jwt);
+
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getAuthorities()).isEmpty();
+    }
+
+    @Test
+    @DisplayName("scp is ignored even when scope is present alongside it")
+    void prefersScopeAndIgnoresScpBesideIt() {
+        Jwt jwt = Jwt.withTokenValue("token")
+                .header("alg", "HS256")
+                .claim(JwtClaimNames.SUB, "client")
+                .claim("scope", "ledger.read")
+                .claim("scp", "ledger.write")
+                .build();
+
+        AbstractAuthenticationToken authentication =
+                securityConfig.jwtAuthenticationConverter().convert(jwt);
+
+        assertThat(authentication).isNotNull();
+        assertThat(authentication.getAuthorities())
+                .extracting(GrantedAuthority::getAuthority)
+                .containsExactly("SCOPE_ledger.read");
+    }
+
+    @Test
     @DisplayName("a token with no scope claim carries no authorities")
     void convertsMissingScopeToNoAuthorities() {
         Jwt jwt = Jwt.withTokenValue("token")
