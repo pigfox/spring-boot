@@ -6,7 +6,10 @@ target/
 # distributionType=only-script, so mvnw fetches Maven itself and no binary is committed.
 .mvn/wrapper/maven-wrapper.jar
 
-# Solidity build output
+# Solidity build output. forge writes cache/ and out/ relative to where it is invoked,
+# which is the repository root when following the README, so both spellings are listed.
+out/
+cache/
 contracts/out/
 contracts/cache/
 broadcast/
