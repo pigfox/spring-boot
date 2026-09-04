@@ -84,28 +84,41 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version
-          shellcheck -x run.sh stop.sh demo.sh lib/auth.sh
+          # -x follows the sourced lib/*.sh, so they are analysed in the context that
+          # actually uses them rather than standalone, where every shared helper would
+          # look unused.
+          shellcheck -x run.sh stop.sh demo.sh
 
       # A syntax error in a script that is never executed in CI would otherwise ship.
       - name: Verify the scripts parse and are executable
         run: |
           set -euo pipefail
-          for script in run.sh stop.sh demo.sh lib/auth.sh; do
+          for script in run.sh stop.sh demo.sh; do
             bash -n "$script"
             test -x "$script" || { echo "$script is not executable"; exit 1; }
             echo "$script: parses, executable"
           done
+          # Libraries are sourced, never executed: they must parse, and must not be
+          # executable, so nobody runs one expecting it to do something.
+          for library in lib/*.sh; do
+            bash -n "$library"
+            test ! -x "$library" || { echo "$library should not be executable"; exit 1; }
+            echo "$library: parses, not executable"
+          done
 
-      # demo.sh must refuse to run against nothing rather than hanging or half-passing.
-      - name: Verify demo.sh fails closed when the app is not running
+      # demo.sh owns the lifecycle by default, so the thing to assert here is that
+      # --no-start still refuses rather than starting anything. The full demo needs
+      # docker and runs in the container job.
+      - name: Verify demo.sh --no-start fails closed
         run: |
           set -euo pipefail
-          if ./demo.sh > demo.log 2>&1; then
-            echo "FAIL: demo.sh passed with no application running"
+          if ./demo.sh --no-start > demo.log 2>&1; then
+            echo "FAIL: demo.sh --no-start passed with no application running"
             exit 1
           fi
           grep -q 'no healthy application' demo.log
-          echo "OK: refused, pointing at run.sh"
+          grep -q 'no-start' demo.log
+          echo "OK: refused without starting anything"
 
       # run.sh must refuse to start before it touches docker when a credential is missing.
       # Asserting it here keeps the no-.env rule from quietly regressing.

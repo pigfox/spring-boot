@@ -135,82 +135,37 @@ which is why `docker-compose.yml` binds neither. To collapse them onto 8087, rem
 
 ## Running locally
 
-[`run.sh`](run.sh) and [`stop.sh`](stop.sh) drive the whole local stack. Both resolve paths
-from their own location, so they work from any directory.
-
 ```bash
-# Secrets, into this shell only. run.sh reads them from the environment and nowhere else.
-export LEDGER_SIGNING_KEY=<a 32-byte hex private key>
-export LEDGER_JWT_SECRET=$(openssl rand -hex 32)
-export LEDGER_CLIENT_ID=local-client
-export LEDGER_CLIENT_SECRET=$(openssl rand -hex 16)
-
-./run.sh          # dependencies, wait for them, then the app on 8087
-./stop.sh         # app down, then dependencies down
-```
-
-`run.sh` requires these four variables and refuses to start without them. It checks before
-it touches docker, so a missing credential costs a second rather than a container start, and
-it prints every missing name at once instead of one per attempt:
-
-| Variable | Meaning |
-|---|---|
-| `LEDGER_SIGNING_KEY` | secp256k1 private key, 32 bytes hex |
-| `LEDGER_JWT_SECRET` | HS256 secret, at least 32 bytes |
-| `LEDGER_CLIENT_ID` | client id the token endpoint accepts |
-| `LEDGER_CLIENT_SECRET` | client secret the token endpoint accepts |
-
-There is no `.env` file, neither script reads or writes one, and no secret is printed. The
-signing key and the JWT secret have no default anywhere in this repository, by design.
-
-| Flag | Effect |
-|---|---|
-| `run.sh` | Dependencies, wait for each to accept connections, then the app |
-| `run.sh --deps-only` | Kafka and anvil only; no app |
-| `run.sh --no-deps` | App only; assumes the dependencies are already up |
-| `run.sh --dev` | Generate throwaway credentials for any of the four not already exported |
-| `stop.sh` | Stop the app, then the stack. Volumes kept |
-| `stop.sh --clean` | Also remove the volumes, discarding Kafka's log and anvil's chain state |
-| `demo.sh` | Exercise every endpoint against a running app, asserting each status |
-| `demo.sh --base-url URL` | Point the API calls elsewhere. Default `http://localhost:8087` |
-| `demo.sh --mgmt-url URL` | Point the actuator calls elsewhere. Default `http://localhost:55437` |
-
-### --dev credentials
-
-`run.sh --dev` generates any of the four variables that is not already exported, so nothing
-you set is ever overridden:
-
-| Variable | Generated as |
-|---|---|
-| `LEDGER_SIGNING_KEY` | `openssl rand -hex 32` |
-| `LEDGER_JWT_SECRET` | `openssl rand -base64 48` |
-| `LEDGER_CLIENT_ID` | `demo` |
-| `LEDGER_CLIENT_SECRET` | `openssl rand -hex 24` |
-
-They exist only in the process tree, are inherited by the app, and are never printed,
-never written to disk, and never placed on a command line. `run.sh` reports which names it
-generated and which it kept, never a value. The no-`.env` rule is unchanged.
-
-That privacy has one consequence worth knowing: **a generated `LEDGER_CLIENT_SECRET` cannot
-be recovered by anything**, including `demo.sh`, which runs in its own shell. To use both
-together, export the client credentials yourself first — `--dev` will keep them and generate
-only the two real secrets:
-
-```bash
-export LEDGER_CLIENT_ID=demo
-export LEDGER_CLIENT_SECRET=$(openssl rand -hex 24)
-./run.sh --dev
 ./demo.sh
 ```
 
-Plain `./run.sh --dev` is still the fastest way to get a running node; it simply leaves no
-client able to authenticate against it. `demo.sh` says so explicitly rather than failing
-obscurely.
+That is the whole thing. One command, no arguments, no environment, no setup. It generates
+its own credentials, starts Kafka and anvil, starts the application, walks nine endpoints
+asserting the status code of each, and tears everything down on the way out.
 
-### demo.sh
+The credentials are the reason it can be one command. `demo.sh` generates all four in its
+own process, so the application inherits them and nothing else ever sees them — they are
+never printed, never written to disk, and never passed on a command line. There is no
+`.env` file and none is read or written.
 
-Walks every endpoint in order and asserts each status code, exiting non-zero on the first
-mismatch and naming the step. It never starts the application.
+If an application is already running, `demo.sh` uses it, leaves it running, and generates
+nothing. Only the process that started that application knows what credentials it was
+given, so in that case `LEDGER_CLIENT_ID` and `LEDGER_CLIENT_SECRET` have to come from your
+environment; the script says so plainly rather than failing obscurely.
+
+Teardown runs from an `EXIT` trap, so a failed assertion or a Ctrl-C halfway through still
+cleans up — and it stops only what that invocation started. Dependencies that were already
+up are left alone.
+
+| Flag | Effect |
+|---|---|
+| `demo.sh` | Start what is needed, run the demo, tear down after |
+| `demo.sh --keep` | Having started the app, leave it running at the end |
+| `demo.sh --no-start` | Never start anything; require an already-running app |
+| `demo.sh --base-url URL` | API base. Default `http://localhost:8087` |
+| `demo.sh --mgmt-url URL` | Actuator base. Default `http://localhost:55437` |
+
+### What the demo asserts
 
 ```
 [1] GET  /actuator/health          200  unauthenticated, the one public route
@@ -224,25 +179,80 @@ mismatch and naming the step. It never starts the application.
 [9] GET  /actuator/prometheus      200  the domain counter incremented
 ```
 
-Step 2 is the point of the script: an unauthenticated caller is refused *before* any token
-exists, so nothing after it can be mistaken for an open gate. Nothing here weakens the
-security model — [`lib/auth.sh`](lib/auth.sh) is an ordinary API client calling the same
-public token endpoint any caller uses. No route was made public and no dev profile disables
-the filter.
+Every step states the status it expects and the run exits non-zero on the first mismatch,
+naming the step. Step 2 is the point of the exercise: an anonymous read is refused *before*
+any token exists, so nothing after it can be mistaken for an open gate.
 
-The token is fetched once, cached in a shell variable for the run, and re-fetched once on a
-401 in case it aged out. It is never printed and never written to disk, and neither it nor
-the client secret is ever passed as a command-line argument, where `ps` would show it — the
-bearer reaches curl as a config on stdin and the client secret as a request body on stdin.
+Nothing in the demo tooling weakens the security model. No route becomes public, nothing
+disables the filter chain, and [`lib/auth.sh`](lib/auth.sh) is an ordinary client calling
+the same public token endpoint any caller would. The bearer is fetched once, cached in a
+shell variable for the run, and re-fetched once on a 401 in case it aged out. Neither it nor
+the client secret is ever a command-line argument, where `ps` would show it: the bearer
+reaches curl as a config on stdin and the client secret as a request body on stdin.
 
-`run.sh` waits by connecting to each port rather than sleeping a fixed interval, then polls
-health until the app answers. It is safe to run twice: an already-running app is detected by
-its recorded pid, and a port held by something else is reported rather than crashed into.
-`stop.sh` exits 0 when nothing is running, so stopping twice — or from a teardown hook — is
-not an error. The pid and log live in `.run/`, which is ignored.
+## Running it by hand
 
-A signing key for local use: anvil prints ten funded test accounts and their private keys at
-startup, and the compose file fixes the mnemonic so they are the same every time.
+When you want the application up for longer than a demo — to point a browser at Swagger UI,
+or to keep state across several requests — [`run.sh`](run.sh) and [`stop.sh`](stop.sh)
+manage the same stack directly. Both resolve paths from their own location, so they work
+from any directory, and both share their mechanics with `demo.sh` through
+[`lib/stack.sh`](lib/stack.sh): dependency startup, health waiting and pidfile handling have
+one implementation, not three.
+
+```bash
+./run.sh --dev    # generate throwaway credentials, start everything
+./stop.sh         # app down, then dependencies down
+```
+
+Without `--dev`, `run.sh` requires all four credentials in the environment and refuses to
+start without them. It checks before it touches docker, so a missing credential costs a
+second rather than a container start, and it prints every missing name at once:
+
+| Variable | Meaning |
+|---|---|
+| `LEDGER_SIGNING_KEY` | secp256k1 private key, 32 bytes hex |
+| `LEDGER_JWT_SECRET` | HS256 secret, at least 32 bytes |
+| `LEDGER_CLIENT_ID` | client id the token endpoint accepts |
+| `LEDGER_CLIENT_SECRET` | client secret the token endpoint accepts |
+
+| Flag | Effect |
+|---|---|
+| `run.sh` | Dependencies, wait for each to accept connections, then the app |
+| `run.sh --deps-only` | Kafka and anvil only; no app |
+| `run.sh --no-deps` | App only; assumes the dependencies are already up |
+| `run.sh --dev` | Generate throwaway credentials for any of the four not already exported |
+| `stop.sh` | Stop the app, then the stack. Volumes kept |
+| `stop.sh --clean` | Also remove the volumes, discarding Kafka's log and anvil's chain state |
+
+`--dev` generates only what is missing, so anything you export is respected:
+
+| Variable | Generated as |
+|---|---|
+| `LEDGER_SIGNING_KEY` | `openssl rand -hex 32` |
+| `LEDGER_JWT_SECRET` | `openssl rand -base64 48` |
+| `LEDGER_CLIENT_ID` | `demo` |
+| `LEDGER_CLIENT_SECRET` | `openssl rand -hex 24` |
+
+`run.sh` reports which names it generated and which it kept, never a value. A generated
+`LEDGER_CLIENT_SECRET` is therefore unrecoverable by anything — which is the point, and the
+reason `demo.sh` generates its own rather than trying to read someone else's. To use both
+together, export the client pair yourself first and `--dev` will keep it:
+
+```bash
+export LEDGER_CLIENT_ID=demo
+export LEDGER_CLIENT_SECRET=$(openssl rand -hex 24)
+./run.sh --dev
+./demo.sh          # reuses the running app, leaves it running
+```
+
+`run.sh` waits by connecting to each port rather than sleeping, then polls health until the
+app answers. Running it twice is safe: an already-running app is detected by its recorded
+pid, and a port held by something else is reported rather than crashed into. `stop.sh` exits
+0 when nothing is running. The pid and log live in `.run/`, which is ignored.
+
+A signing key for local use against a real chain: anvil prints ten funded test accounts and
+their private keys at startup, and the compose file fixes the mnemonic so they are the same
+every time.
 
 ```bash
 ./run.sh --deps-only
