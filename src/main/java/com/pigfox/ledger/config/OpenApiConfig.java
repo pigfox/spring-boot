@@ -37,7 +37,7 @@ public class OpenApiConfig {
                 .info(new Info()
                         .title(TITLE)
                         .version(VERSION)
-                        .description("API-first contract for the ledger-node service.")
+                        .description("API-first contract for the spring-boot service.")
                         .license(new License()
                                 .name("Apache-2.0")
                                 .url("https://www.apache.org/licenses/LICENSE-2.0")))

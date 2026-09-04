@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Ledger Node Asset API
   description: |
-    API-first contract for the ledger-node service.
+    API-first contract for the spring-boot service.
 
     The service records assets, anchors a keccak256 hash of the canonical asset
     payload on an EVM chain, and signs that hash with a secp256k1 key held only in

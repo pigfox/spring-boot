@@ -52,7 +52,7 @@ public class SecurityConfig {
      * Spring's {@code Jwt.getIssuer()} converts it to a URL, so a bare name would make
      * every reader of that claim throw.
      */
-    public static final String ISSUER = "https://ledger-node.local";
+    public static final String ISSUER = "https://spring-boot.local";
 
     /**
      * @param http           builder supplied by Spring Security

@@ -34,6 +34,6 @@ public class TelemetryConfig {
     /** @return filter stamping every meter with the emitting component */
     @Bean
     public MeterFilter ledgerNodeTag() {
-        return MeterFilter.commonTags(List.of(Tag.of("component", "ledger-node")));
+        return MeterFilter.commonTags(List.of(Tag.of("component", "spring-boot")));
     }
 }

@@ -34,7 +34,7 @@ class KafkaConfigTest {
     private KafkaProperties kafkaProperties() {
         KafkaProperties properties = new KafkaProperties();
         properties.setBootstrapServers(List.of("localhost:19092"));
-        properties.getConsumer().setGroupId("ledger-node");
+        properties.getConsumer().setGroupId("spring-boot");
         return properties;
     }
 

@@ -165,7 +165,7 @@ class ConfigBeansTest {
 
         assertThat(telemetry.timedAspect(registry)).isNotNull();
         assertThat(registry.get("some.counter").counter().getId().getTag("component"))
-                .isEqualTo("ledger-node");
+                .isEqualTo("spring-boot");
     }
 
     @Test
@@ -194,7 +194,7 @@ class ConfigBeansTest {
                 SecurityConfig.TOKEN_ENDPOINT, "token",
                 SecurityConfig.HEALTH_ENDPOINT, "health"))
                 .containsOnlyKeys("/api/v1/auth/token", "/actuator/health");
-        assertThat(SecurityConfig.ISSUER).isEqualTo("https://ledger-node.local");
+        assertThat(SecurityConfig.ISSUER).isEqualTo("https://spring-boot.local");
     }
     /**
      * Encodes with an explicit HS256 header. A shared secret can only sign a MAC, and the

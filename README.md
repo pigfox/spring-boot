@@ -1,4 +1,4 @@
-# ledger-node
+# spring-boot
 
 An API-first blockchain ledger service in Java 21 and Spring Boot 3.5. It registers assets,
 anchors a keccak256 hash of each asset payload on an EVM chain, signs that hash with a
@@ -9,6 +9,7 @@ Everything below is implemented and tested. 216 tests, 100% line and branch cove
 enforced by a build gate rather than asserted in prose.
 
 ```
+Clone         git clone git@github.com:pigfox/spring-boot.git
 API           http://localhost:8087
 Telemetry     http://localhost:55437/actuator/health
 Contract      src/main/resources/openapi/asset-api.yaml
@@ -290,11 +291,11 @@ anywhere in the repository.
 ## Container
 
 ```bash
-docker build -t ledger-node:local .
+docker build -t spring-boot:local .
 docker run --rm -p 8087:8087 -p 55437:55437 \
   -e LEDGER_SIGNING_KEY -e LEDGER_JWT_SECRET \
   -e LEDGER_CLIENT_ID -e LEDGER_CLIENT_SECRET \
-  ledger-node:local
+  spring-boot:local
 ```
 
 Multi-stage, layered so a release pushes application bytes rather than 120 dependency jars,

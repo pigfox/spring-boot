@@ -14,7 +14,7 @@ RUN ./mvnw -B -q dependency:go-offline
 
 COPY src/ src/
 RUN ./mvnw -B -q -DskipTests package \
-    && cp target/ledger-node-*.jar application.jar \
+    && cp target/spring-boot-*.jar application.jar \
     # Split the jar into layers that change at different rates. Dependencies are ~120 jars
     # and change rarely; application code changes every commit. Separating them means a
     # release pushes kilobytes instead of the whole 80MB image.

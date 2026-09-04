@@ -35,7 +35,7 @@ public final class TestFixtures {
     public static final String OTHER_ADDRESS = Keys.toChecksumAddress(Keys.getAddress(OTHER_KEY_PAIR));
 
     /** Non-secret HMAC material, long enough for HS256. */
-    public static final String JWT_SECRET = "ledger-node-unit-test-hmac-material-not-a-live-value";
+    public static final String JWT_SECRET = "spring-boot-unit-test-hmac-material-not-a-live-value";
     /** Test client identifier. */
     public static final String CLIENT_ID = "test-client";
     /** Test client credential. */

@@ -18,7 +18,7 @@ concurrency:
 
 env:
   JAVA_VERSION: '21'
-  IMAGE_NAME: ledger-node
+  IMAGE_NAME: spring-boot
 
 jobs:
   build:
@@ -68,7 +68,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: application-jar
-          path: target/ledger-node-*.jar
+          path: target/spring-boot-*.jar
           retention-days: 7
 
   secrets-scan:
@@ -205,7 +205,7 @@ jobs:
           echo "OK: refused to start, naming the missing properties"
 
           echo "--- must start when configured ---"
-          docker run -d --name ledger-smoke -p 8087:8087 -p 55437:55437 \
+          docker run -d --name spring-boot-smoke -p 8087:8087 -p 55437:55437 \
             -e LEDGER_SIGNING_KEY="0x$(openssl rand -hex 32)" \
             -e LEDGER_JWT_SECRET="$(openssl rand -hex 32)" \
             -e LEDGER_CLIENT_ID=ci-client \
@@ -219,7 +219,7 @@ jobs:
             if curl -fsS http://localhost:55437/actuator/health > health.json 2>/dev/null; then
               echo "OK: health is public on the telemetry port"; cat health.json; break
             fi
-            if [ "$i" = "60" ]; then echo "FAIL: never became healthy"; docker logs ledger-smoke; exit 1; fi
+            if [ "$i" = "60" ]; then echo "FAIL: never became healthy"; docker logs spring-boot-smoke; exit 1; fi
             sleep 2
           done
 
@@ -230,8 +230,8 @@ jobs:
 
       - name: Container logs on failure
         if: failure()
-        run: docker logs ledger-smoke || true
+        run: docker logs spring-boot-smoke || true
 
       - name: Stop the container
         if: always()
-        run: docker rm -f ledger-smoke || true
+        run: docker rm -f spring-boot-smoke || true

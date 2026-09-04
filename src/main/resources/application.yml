@@ -11,7 +11,7 @@ server:
 
 spring:
   application:
-    name: ledger-node
+    name: spring-boot
   main:
     banner-mode: "off"
   jackson:
@@ -21,7 +21,7 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:19092}
     consumer:
-      group-id: ledger-node
+      group-id: spring-boot
       auto-offset-reset: earliest
     listener:
       ack-mode: manual_immediate
@@ -42,7 +42,7 @@ management:
       show-details: never
   metrics:
     tags:
-      application: ledger-node
+      application: spring-boot
   prometheus:
     metrics:
       export:

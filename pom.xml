@@ -12,9 +12,9 @@
   </parent>
 
   <groupId>com.pigfox</groupId>
-  <artifactId>ledger-node</artifactId>
+  <artifactId>spring-boot</artifactId>
   <version>1.0.0</version>
-  <name>ledger-node</name>
+  <name>spring-boot</name>
   <description>API-first blockchain ledger node: EVM anchoring, secp256k1 signing, zero-trust JWT, Kafka events, OTLP telemetry</description>
 
   <properties>

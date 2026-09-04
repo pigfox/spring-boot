@@ -3,18 +3,18 @@
 #
 # Port allocation: the node owns 8087 (API) and 55437 (telemetry), so nothing below may
 # bind either of them. Kafka is published on 19092 and anvil on 8545.
-name: ledger-node-deps
+name: spring-boot-deps
 
 services:
   kafka:
     image: apache/kafka:3.7.1
-    container_name: ledger-kafka
+    container_name: spring-boot-kafka
     ports:
       # Host-facing listener. Matches the KAFKA_BOOTSTRAP_SERVERS default in application.yml.
       - "19092:19092"
     environment:
       # KRaft: this one node is both broker and controller, so there is no ZooKeeper.
-      CLUSTER_ID: ledger-node-local-cluster
+      CLUSTER_ID: spring-boot-local-cluster
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
@@ -45,7 +45,7 @@ services:
 
   anvil:
     image: ghcr.io/foundry-rs/foundry:v1.0.0
-    container_name: ledger-anvil
+    container_name: spring-boot-anvil
     # The image entrypoint is a shell wrapper, so anvil is named explicitly.
     entrypoint: ["anvil"]
     command:
