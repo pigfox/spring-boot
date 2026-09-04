@@ -1,6 +1,7 @@
 package com.pigfox.ledger.kafka;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -79,6 +80,34 @@ class AssetEventPublisherTest {
     void tagsCountersWithTopic() {
         assertThat(meterRegistry.find("ledger.events.published").counter().getId().getTag("topic"))
                 .isEqualTo(TestFixtures.TOPIC);
+    }
+
+    @Test
+    @DisplayName("a send that throws synchronously is counted, not propagated")
+    void survivesSynchronousFailure() {
+        // What an unreachable broker actually does: send cannot resolve topic metadata and
+        // throws after max.block.ms instead of returning a failed future. Handling only the
+        // future would let this reach the caller as a 500 for a write that succeeded.
+        when(template.send(eq(TestFixtures.TOPIC), eq("asset-1"), any(AssetEvent.class)))
+                .thenThrow(new org.springframework.kafka.KafkaException("Send failed",
+                        new org.apache.kafka.common.errors.TimeoutException(
+                                "Topic asset.events not present in metadata after 2000 ms.")));
+
+        assertThatCode(() -> publisher.publish(event)).doesNotThrowAnyException();
+
+        assertThat(counter("ledger.events.failed")).isEqualTo(1.0);
+        assertThat(counter("ledger.events.published")).isZero();
+    }
+
+    @Test
+    @DisplayName("an unchecked failure from the template is also contained")
+    void survivesUncheckedFailure() {
+        when(template.send(eq(TestFixtures.TOPIC), eq("asset-1"), any(AssetEvent.class)))
+                .thenThrow(new IllegalStateException("producer closed"));
+
+        assertThatCode(() -> publisher.publish(event)).doesNotThrowAnyException();
+
+        assertThat(counter("ledger.events.failed")).isEqualTo(1.0);
     }
 
     private double counter(String name) {

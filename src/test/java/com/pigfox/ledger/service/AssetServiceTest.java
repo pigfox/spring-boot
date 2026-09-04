@@ -98,7 +98,7 @@ class AssetServiceTest {
     void countsRegistrations() {
         register();
 
-        assertThat(meterRegistry.get("ledger.assets.created").counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("ledger.assets.registered").counter().count()).isEqualTo(1.0);
         assertThat(meterRegistry.get("ledger.assets.anchor.failures").counter().count()).isZero();
     }
 
@@ -113,7 +113,7 @@ class AssetServiceTest {
         assertThat(asset.anchored()).isFalse();
         assertThat(asset.signature()).isNotBlank();
         assertThat(meterRegistry.get("ledger.assets.anchor.failures").counter().count()).isEqualTo(1.0);
-        assertThat(meterRegistry.get("ledger.assets.created").counter().count()).isEqualTo(1.0);
+        assertThat(meterRegistry.get("ledger.assets.registered").counter().count()).isEqualTo(1.0);
     }
 
     @Test

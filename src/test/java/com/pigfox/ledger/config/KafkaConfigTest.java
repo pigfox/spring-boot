@@ -63,6 +63,14 @@ class KafkaConfigTest {
     }
 
     @Test
+    @DisplayName("the producer will not block a request thread for longer than 2s")
+    void producerBoundsMetadataBlocking() {
+        // The 60s default turns an unreachable broker into a minute-long stall on a write
+        // that has already been hashed, signed and stored.
+        assertThat(producerConfig()).containsEntry(ProducerConfig.MAX_BLOCK_MS_CONFIG, 2_000);
+    }
+
+    @Test
     @DisplayName("the producer serialises keys as strings and values as JSON without type headers")
     void producerUsesJsonValues() {
         assertThat(producerConfig())

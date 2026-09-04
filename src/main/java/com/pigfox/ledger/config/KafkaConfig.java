@@ -30,6 +30,11 @@ import org.apache.kafka.clients.admin.NewTopic;
  * duplicate produced by an internal retry, so a retried anchor notification cannot be
  * delivered twice.
  *
+ * <p>Durability is bounded by {@code max.block.ms} rather than the 60s default: an
+ * unreachable broker must cost an API caller a moment, not a minute. See
+ * {@link com.pigfox.ledger.kafka.AssetEventPublisher} for why it must cost nothing worse
+ * than that.
+ *
  * <p>The consumer restricts {@link JsonDeserializer#TRUSTED_PACKAGES} to the domain
  * package. Left open, the JSON deserialiser will instantiate whatever type a record's
  * headers name, which turns topic write access into arbitrary class loading. The
@@ -57,6 +62,11 @@ public class KafkaConfig {
         config.put(ProducerConfig.MAX_IN_FLIGHT_REQUESTS_PER_CONNECTION, 5);
         config.put(ProducerConfig.RETRIES_CONFIG, Integer.MAX_VALUE);
         config.put(ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 120_000);
+        // Bounds how long send() may block the calling thread waiting for topic metadata.
+        // The default is 60s, which turns a broker outage into a minute-long stall on an
+        // API request that has already done its real work. Metadata is cached after the
+        // first successful send, so a healthy broker never pays this.
+        config.put(ProducerConfig.MAX_BLOCK_MS_CONFIG, 2_000);
         config.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
         return new DefaultKafkaProducerFactory<>(config);
     }

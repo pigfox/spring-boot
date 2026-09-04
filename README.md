@@ -5,7 +5,7 @@ anchors a keccak256 hash of each asset payload on an EVM chain, signs that hash 
 secp256k1 key held only in the process environment, and publishes the result to Kafka —
 behind a stateless, deny-by-default JWT perimeter, with Prometheus metrics and OTLP traces.
 
-Everything below is implemented and tested. 209 tests, 100% line and branch coverage,
+Everything below is implemented and tested. 216 tests, 100% line and branch coverage,
 enforced by a build gate rather than asserted in prose.
 
 ```
@@ -28,7 +28,7 @@ Contract      src/main/resources/openapi/asset-api.yaml
 | Zero-trust | [`SecurityConfig`](src/main/java/com/pigfox/ledger/config/SecurityConfig.java) | Stateless, deny-by-default, JWT required everywhere except the token endpoint and the health probe; [`ZeroTrustSecurityTest`](src/test/java/com/pigfox/ledger/api/ZeroTrustSecurityTest.java) and [`ManagementPortSecurityTest`](src/test/java/com/pigfox/ledger/api/ManagementPortSecurityTest.java) |
 | Method-level authorization on writes | [`AssetController`](src/main/java/com/pigfox/ledger/api/AssetController.java) | `@PreAuthorize` per method, independent of the URL rules; a read-only token gets 403 on a write |
 | Kafka event-driven | [`KafkaConfig`](src/main/java/com/pigfox/ledger/config/KafkaConfig.java), [`AssetEventPublisher`](src/main/java/com/pigfox/ledger/kafka/AssetEventPublisher.java), [`AssetEventListener`](src/main/java/com/pigfox/ledger/kafka/AssetEventListener.java) | `asset.events`, JSON serde with trusted packages pinned to `com.pigfox.ledger.domain`, idempotent producer, `acks=all`; [`KafkaConfigTest`](src/test/java/com/pigfox/ledger/config/KafkaConfigTest.java) pins each setting |
-| Telemetry | [`TelemetryConfig`](src/main/java/com/pigfox/ledger/config/TelemetryConfig.java), [`application.yml`](src/main/resources/application.yml), [`AssetService`](src/main/java/com/pigfox/ledger/service/AssetService.java) | Actuator, Prometheus scrape, OTLP tracing, and the `ledger.assets.created` domain counter |
+| Telemetry | [`TelemetryConfig`](src/main/java/com/pigfox/ledger/config/TelemetryConfig.java), [`application.yml`](src/main/resources/application.yml), [`AssetService`](src/main/java/com/pigfox/ledger/service/AssetService.java) | Actuator, Prometheus scrape, OTLP tracing, and the `ledger.assets.registered` domain counter |
 | CI/CD | [`.github/workflows/ci.yml`](.github/workflows/ci.yml) | Build, test, 100% coverage gate, secret scan, dependency scan, image build and image scan |
 | DevSecOps | [`.github/workflows/ci.yml`](.github/workflows/ci.yml), [`Dockerfile`](Dockerfile) | gitleaks over full history, Trivy filesystem and image scans failing on HIGH/CRITICAL, non-root distro-minimal runtime, image smoke test asserting the node refuses to start unconfigured |
 
@@ -177,13 +177,28 @@ cast call "$LEDGER_REGISTRY_CONTRACT" 'signerOf(bytes32)(address)' "$PAYLOAD_HAS
 
 ### Degradation
 
-The chain is a corroborating side channel, not the write path. A node that is down, a
-transaction the node refuses, or a contract that reverts each produce an
-[`AnchorResult`](src/main/java/com/pigfox/ledger/chain/AnchorResult.java) rather than an
-exception, and the asset is still hashed, signed, stored and published. An unavailable chain
-therefore yields `anchored: false` and an absent `anchorTxHash` — never a 500. The
-`UNREACHABLE` / `REJECTED` distinction is kept so an operator can tell an outage from a bad
-configuration, and `ledger.assets.anchor.failures` counts both.
+Neither the chain nor the broker is on the write path. Both are corroboration layered on top
+of a hash that is already signed and stored, so neither may fail a caller's request.
+
+For the chain, a node that is down, a transaction the node refuses, or a contract that
+reverts each produce an [`AnchorResult`](src/main/java/com/pigfox/ledger/chain/AnchorResult.java)
+rather than an exception. An unavailable chain yields `anchored: false` and an absent
+`anchorTxHash` — never a 500. The `UNREACHABLE` / `REJECTED` distinction is kept so an
+operator can tell an outage from a bad configuration, and `ledger.assets.anchor.failures`
+counts both.
+
+The broker needed two guards, and only one of them is obvious. `KafkaTemplate.send` reports
+a delivery failure through the future it returns, but when there is no reachable broker at
+all it cannot resolve topic metadata, so it blocks for `max.block.ms` and then throws
+*synchronously* on the request thread. Handling only the future leaves that exception to
+surface as a 500 for a write that actually succeeded — which is exactly what a smoke test
+against the built image caught after a fully green suite, because every integration test
+mocked the publisher.
+[`AssetEventPublisher`](src/main/java/com/pigfox/ledger/kafka/AssetEventPublisher.java) now
+guards both paths, `max.block.ms` is 2s rather than the 60s default so an outage costs a
+moment instead of a minute, and
+[`BrokerOutageIntegrationTest`](src/test/java/com/pigfox/ledger/api/BrokerOutageIntegrationTest.java)
+registers an asset against a closed port with the real publisher in place.
 
 ### Canonicalisation
 
@@ -237,7 +252,9 @@ anywhere in the repository.
 | [`ManagementPortSecurityTest`](src/test/java/com/pigfox/ledger/api/ManagementPortSecurityTest.java) | The real two-port topology: health public, everything else on the telemetry port authenticated |
 | [`AssetApiIntegrationTest`](src/test/java/com/pigfox/ledger/api/AssetApiIntegrationTest.java) | Token to registration to verification over the real filter chain |
 | [`AssetServiceTest`](src/test/java/com/pigfox/ledger/service/AssetServiceTest.java) | Registration ordering, counters, and tamper detection using the real hasher and signer |
+| [`BrokerOutageIntegrationTest`](src/test/java/com/pigfox/ledger/api/BrokerOutageIntegrationTest.java) | A write still succeeds, with the real publisher, when no broker is reachable |
 | [`LedgerPropertiesValidationTest`](src/test/java/com/pigfox/ledger/config/LedgerPropertiesValidationTest.java) | A missing or too-short secret fails startup |
+| [`PrometheusNamingTest`](src/test/java/com/pigfox/ledger/config/PrometheusNamingTest.java) | The metric names that actually reach a scrape, which are not the names the code asks for |
 
 ## Container
 

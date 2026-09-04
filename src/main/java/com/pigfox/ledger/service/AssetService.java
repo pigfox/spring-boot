@@ -91,7 +91,10 @@ public class AssetService {
         this.publisher = publisher;
         this.clock = clock;
         this.idGenerator = idGenerator;
-        this.created = Counter.builder("ledger.assets.created")
+        // Deliberately not "ledger.assets.created": the Prometheus client treats a
+        // trailing "created" as its own reserved suffix and strips it, so that name is
+        // scraped as the meaningless "ledger_assets_total". PrometheusNamingTest pins this.
+        this.created = Counter.builder("ledger.assets.registered")
                 .description("Assets registered by this node")
                 .register(meterRegistry);
         this.anchorFailures = Counter.builder("ledger.assets.anchor.failures")

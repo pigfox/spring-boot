@@ -12,10 +12,18 @@ import org.springframework.stereotype.Component;
 /**
  * Publishes asset lifecycle events.
  *
- * <p>Publication is asynchronous and non-fatal. The asset is already stored and signed
- * by the time this runs, so a broker outage is recorded on a counter and logged rather
- * than failing the caller's request. The asset id is the record key, which keeps all
- * events for one asset on one partition and therefore in order.
+ * <p>Publication must never fail the caller's request. By the time this runs the asset is
+ * hashed, signed and stored, so a broker outage is a lost notification, not a lost asset —
+ * and answering 500 would tell the client its write failed when it did not.
+ *
+ * <p>That takes guarding two separate failure paths, which is easy to get half right.
+ * {@code send} reports a delivery failure through the returned future, but it also throws
+ * <em>synchronously</em> when it cannot resolve topic metadata at all — the broker-is-down
+ * case. Handling only the future leaves that exception to propagate up through the service
+ * and out as a 500. Both paths increment {@code ledger.events.failed}.
+ *
+ * <p>The asset id is the record key, which keeps all events for one asset on one partition
+ * and therefore in order.
  */
 @Component
 public class AssetEventPublisher {
@@ -44,20 +52,28 @@ public class AssetEventPublisher {
     }
 
     /**
-     * Sends an event, keyed by asset id.
+     * Sends an event, keyed by asset id. Never throws.
      *
      * @param event event to publish
      */
     public void publish(AssetEvent event) {
-        template.send(topic, event.assetId(), event).whenComplete((result, error) -> {
-            if (error == null) {
-                published.increment();
-                log.debug("Published {} for asset {}", event.eventType(), event.assetId());
-            } else {
-                failed.increment();
-                log.error("Failed to publish {} for asset {}: {}",
-                        event.eventType(), event.assetId(), error.getMessage());
-            }
-        });
+        try {
+            template.send(topic, event.assetId(), event).whenComplete((result, error) -> {
+                if (error == null) {
+                    published.increment();
+                    log.debug("Published {} for asset {}", event.eventType(), event.assetId());
+                } else {
+                    failed.increment();
+                    log.error("Failed to publish {} for asset {}: {}",
+                            event.eventType(), event.assetId(), error.getMessage());
+                }
+            });
+        } catch (Exception e) {
+            // The synchronous path: no reachable broker means no topic metadata, and send
+            // gives up after max.block.ms by throwing rather than returning a future.
+            failed.increment();
+            log.error("Could not hand {} for asset {} to the broker, continuing: {}",
+                    event.eventType(), event.assetId(), e.getMessage());
+        }
     }
 }
