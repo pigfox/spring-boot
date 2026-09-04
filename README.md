@@ -168,8 +168,72 @@ signing key and the JWT secret have no default anywhere in this repository, by d
 | `run.sh` | Dependencies, wait for each to accept connections, then the app |
 | `run.sh --deps-only` | Kafka and anvil only; no app |
 | `run.sh --no-deps` | App only; assumes the dependencies are already up |
+| `run.sh --dev` | Generate throwaway credentials for any of the four not already exported |
 | `stop.sh` | Stop the app, then the stack. Volumes kept |
 | `stop.sh --clean` | Also remove the volumes, discarding Kafka's log and anvil's chain state |
+| `demo.sh` | Exercise every endpoint against a running app, asserting each status |
+| `demo.sh --base-url URL` | Point the API calls elsewhere. Default `http://localhost:8087` |
+| `demo.sh --mgmt-url URL` | Point the actuator calls elsewhere. Default `http://localhost:55437` |
+
+### --dev credentials
+
+`run.sh --dev` generates any of the four variables that is not already exported, so nothing
+you set is ever overridden:
+
+| Variable | Generated as |
+|---|---|
+| `LEDGER_SIGNING_KEY` | `openssl rand -hex 32` |
+| `LEDGER_JWT_SECRET` | `openssl rand -base64 48` |
+| `LEDGER_CLIENT_ID` | `demo` |
+| `LEDGER_CLIENT_SECRET` | `openssl rand -hex 24` |
+
+They exist only in the process tree, are inherited by the app, and are never printed,
+never written to disk, and never placed on a command line. `run.sh` reports which names it
+generated and which it kept, never a value. The no-`.env` rule is unchanged.
+
+That privacy has one consequence worth knowing: **a generated `LEDGER_CLIENT_SECRET` cannot
+be recovered by anything**, including `demo.sh`, which runs in its own shell. To use both
+together, export the client credentials yourself first — `--dev` will keep them and generate
+only the two real secrets:
+
+```bash
+export LEDGER_CLIENT_ID=demo
+export LEDGER_CLIENT_SECRET=$(openssl rand -hex 24)
+./run.sh --dev
+./demo.sh
+```
+
+Plain `./run.sh --dev` is still the fastest way to get a running node; it simply leaves no
+client able to authenticate against it. `demo.sh` says so explicitly rather than failing
+obscurely.
+
+### demo.sh
+
+Walks every endpoint in order and asserts each status code, exiting non-zero on the first
+mismatch and naming the step. It never starts the application.
+
+```
+[1] GET  /actuator/health          200  unauthenticated, the one public route
+[2] GET  /api/v1/assets            401  no token: the gate must refuse
+[3] POST /api/v1/auth/token        200  obtain a bearer
+[4] POST /api/v1/assets            201  register, capture the id
+[5] GET  /api/v1/assets            200  the new asset is listed
+[6] GET  /api/v1/assets/{id}       200  fields match what was registered
+[7] POST /api/v1/assets/{id}/verify 200 signatureValid: true
+[8] GET  /api/v1/assets/{unknown}  404  an id nobody registered
+[9] GET  /actuator/prometheus      200  the domain counter incremented
+```
+
+Step 2 is the point of the script: an unauthenticated caller is refused *before* any token
+exists, so nothing after it can be mistaken for an open gate. Nothing here weakens the
+security model — [`lib/auth.sh`](lib/auth.sh) is an ordinary API client calling the same
+public token endpoint any caller uses. No route was made public and no dev profile disables
+the filter.
+
+The token is fetched once, cached in a shell variable for the run, and re-fetched once on a
+401 in case it aged out. It is never printed and never written to disk, and neither it nor
+the client secret is ever passed as a command-line argument, where `ps` would show it — the
+bearer reaches curl as a config on stdin and the client secret as a request body on stdin.
 
 `run.sh` waits by connecting to each port rather than sleeping a fixed interval, then polls
 health until the app answers. It is safe to run twice: an already-running app is detected by

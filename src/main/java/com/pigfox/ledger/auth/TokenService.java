@@ -84,5 +84,11 @@ public class TokenService {
      * @param scope     space-delimited granted scopes
      */
     public record IssuedToken(String token, long expiresIn, String scope) {
+
+        /** Redacts the token: a bearer in a log is a bearer anyone reading the log holds. */
+        @Override
+        public String toString() {
+            return "IssuedToken[token=<redacted>, expiresIn=" + expiresIn + ", scope=" + scope + "]";
+        }
     }
 }

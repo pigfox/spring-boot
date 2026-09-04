@@ -41,14 +41,17 @@ readonly REQUIRED_ENV=(
 
 WITH_DEPS=true
 WITH_APP=true
+DEV_MODE=false
 
 usage() {
     cat <<'USAGE'
-Usage: run.sh [--deps-only | --no-deps] [--help]
+Usage: run.sh [--deps-only | --no-deps] [--dev] [--help]
 
   (no flags)    Start the docker-compose dependencies, wait for them, then start the app.
   --deps-only   Start and wait for the dependencies only. Does not start the app.
   --no-deps     Start the app only. Assumes Kafka and anvil are already running.
+  --dev         Generate throwaway credentials for any of the four that are not already
+                exported, instead of refusing to start. Local demo use only.
   --help        Show this message.
 
 Required environment variables (no defaults, never read from a file):
@@ -92,7 +95,52 @@ wait_for_port() {
     printf 'ready\n'
 }
 
+# Generates a credential only when the variable is unset or empty, so anything already
+# exported always wins. Values are exported for the app to inherit and are never printed,
+# never written to disk, and never placed on a command line.
+generate_dev_secret() {
+    local var="$1" value="$2"
+
+    if [ -n "${!var:-}" ]; then
+        printf '    %-22s kept (already exported)\n' "$var"
+        return 0
+    fi
+    # printf -v assigns by name without the value passing through a subshell's output.
+    printf -v "$var" '%s' "$value"
+    export "${var?}"
+    printf '    %-22s generated\n' "$var"
+}
+
+dev_env() {
+    command -v openssl >/dev/null 2>&1 || fail '--dev needs openssl, which is not on PATH'
+
+    cat <<'WARNING'
+
+  ############################################################################
+  #  --dev: THROWAWAY CREDENTIALS FOR LOCAL DEMO USE ONLY                    #
+  #                                                                          #
+  #  Generated fresh on every run, held only in this process tree, and       #
+  #  inherited by the app. They are never printed, never written to disk,    #
+  #  and never passed on a command line. Nothing signed with them means      #
+  #  anything, and no token issued under them survives a restart.            #
+  #                                                                          #
+  #  Never use --dev for anything you would mind losing or forging.          #
+  ############################################################################
+
+WARNING
+    generate_dev_secret LEDGER_SIGNING_KEY "$(openssl rand -hex 32)"
+    generate_dev_secret LEDGER_JWT_SECRET "$(openssl rand -base64 48)"
+    generate_dev_secret LEDGER_CLIENT_ID demo
+    generate_dev_secret LEDGER_CLIENT_SECRET "$(openssl rand -hex 24)"
+    printf '\n'
+}
+
 preflight_env() {
+    if [ "$DEV_MODE" = true ]; then
+        dev_env
+        return 0
+    fi
+
     local missing=()
     local var
 
@@ -218,6 +266,7 @@ main() {
         case "$1" in
             --deps-only) WITH_APP=false ;;
             --no-deps) WITH_DEPS=false ;;
+            --dev) DEV_MODE=true ;;
             --help | -h)
                 usage
                 exit 0

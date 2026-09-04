@@ -42,6 +42,13 @@ public record LedgerProperties(
             @NotBlank @Size(min = 32) String jwtSecret,
             @NotNull Duration tokenTtl,
             @NotBlank String scope) {
+
+        /** Redacts both secrets; see {@link Crypto#toString()} for why. */
+        @Override
+        public String toString() {
+            return "Auth[clientId=" + clientId + ", clientSecret=<redacted>, "
+                    + "jwtSecret=<redacted>, tokenTtl=" + tokenTtl + ", scope=" + scope + "]";
+        }
     }
 
     /**
@@ -50,6 +57,20 @@ public record LedgerProperties(
      * @param signingKey secp256k1 private key, from {@code LEDGER_SIGNING_KEY}
      */
     public record Crypto(@NotBlank String signingKey) {
+
+        /**
+         * Redacts the key.
+         *
+         * <p>A record's generated {@code toString} prints every component, and bound
+         * configuration gets stringified in places this code does not control: binding
+         * failure messages, {@code /actuator/configprops}, a debugger, a heap dump viewer.
+         * The signing key is the one value in this service that must never appear
+         * anywhere, so it does not get a default {@code toString}.
+         */
+        @Override
+        public String toString() {
+            return "Crypto[signingKey=<redacted>]";
+        }
     }
 
     /**

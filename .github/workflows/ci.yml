@@ -84,17 +84,28 @@ jobs:
       - name: shellcheck
         run: |
           shellcheck --version
-          shellcheck -x run.sh stop.sh
+          shellcheck -x run.sh stop.sh demo.sh lib/auth.sh
 
       # A syntax error in a script that is never executed in CI would otherwise ship.
       - name: Verify the scripts parse and are executable
         run: |
           set -euo pipefail
-          for script in run.sh stop.sh; do
+          for script in run.sh stop.sh demo.sh lib/auth.sh; do
             bash -n "$script"
             test -x "$script" || { echo "$script is not executable"; exit 1; }
             echo "$script: parses, executable"
           done
+
+      # demo.sh must refuse to run against nothing rather than hanging or half-passing.
+      - name: Verify demo.sh fails closed when the app is not running
+        run: |
+          set -euo pipefail
+          if ./demo.sh > demo.log 2>&1; then
+            echo "FAIL: demo.sh passed with no application running"
+            exit 1
+          fi
+          grep -q 'no healthy application' demo.log
+          echo "OK: refused, pointing at run.sh"
 
       # run.sh must refuse to start before it touches docker when a credential is missing.
       # Asserting it here keeps the no-.env rule from quietly regressing.
